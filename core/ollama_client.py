@@ -59,9 +59,15 @@ class OllamaClient:
     def generate_response(self, 
                          prompt: str, 
                          context: Optional[str] = None,
-                         temperature: float = 0.7,
-                         max_tokens: int = 32768) -> LLMMessage:  # Increased to 32k for comprehensive responses
+                         temperature: float = None,
+                         max_tokens: int = None) -> LLMMessage:
         """Generate a response from Ollama"""
+        
+        # Use config defaults if not specified
+        if temperature is None:
+            temperature = Config.OLLAMA_DEFAULT_TEMPERATURE
+        if max_tokens is None:
+            max_tokens = Config.OLLAMA_DEFAULT_MAX_TOKENS
         
         # Build the system prompt for comprehensive responses
         system_prompt = f"""You are Ollama, an expert software architect and technical documentation specialist having a discussion with DeepSeek about software project planning and architecture.
@@ -97,7 +103,7 @@ You have {max_tokens} tokens available - use them for architecture documentation
             "stream": False,
             "options": {
                 "temperature": temperature,
-                "num_predict": 32768,  # Force longer responses (32k tokens)
+                "num_predict": max_tokens,  # Use configurable token limit
                 "num_ctx": 32768,  # Large context window
                 "top_k": 40,
                 "top_p": 0.9,
@@ -190,7 +196,7 @@ DeepSeek, your analysis is comprehensive, but I want to make sure we're consider
 
 PROVIDE DETAILED PRACTICAL GUIDANCE - this should give implementers specific direction on how to actually build this."""
         
-        return self.generate_response(prompt, research_context, max_tokens=24576)
+        return self.generate_response(prompt, research_context, max_tokens=Config.OLLAMA_REVIEW_MAX_TOKENS)
     
     def refine_technical_approach(self,
                                 user_prompt: str,
@@ -223,7 +229,7 @@ PROVIDE DETAILED PRACTICAL GUIDANCE - this should give implementers specific dir
         Focus on building a technically sound implementation plan within the token limit.
         """
         
-        return self.generate_response(prompt, research_context, max_tokens=24576)
+        return self.generate_response(prompt, research_context, max_tokens=Config.OLLAMA_REVIEW_MAX_TOKENS)
     
     def continue_discussion(self, user_prompt: str, research_context: str, deepseek_response: str) -> LLMMessage:
         """Continue the discussion based on DeepSeek's latest points"""
@@ -267,7 +273,7 @@ You must provide a DETAILED technical response of at least 1500-2000 words cover
 
 Ensure each section provides unique, actionable technical insights. Build upon DeepSeek's analysis with practical implementation expertise."""
 
-        return self.generate_response(prompt, research_context, max_tokens=32768)  # Increased for comprehensive responses
+        return self.generate_response(prompt, research_context, max_tokens=Config.OLLAMA_DISCUSSION_MAX_TOKENS)
     
     def validate_implementation_feasibility(self, 
                                           development_plan: str) -> Dict[str, Any]:
@@ -289,7 +295,7 @@ Ensure each section provides unique, actionable technical insights. Build upon D
         Provide a feasibility score (0.0 to 1.0) and detailed feedback.
         """
         
-        response = self.generate_response(prompt, temperature=0.3, max_tokens=8192)
+        response = self.generate_response(prompt, temperature=0.3, max_tokens=Config.OLLAMA_VALIDATION_MAX_TOKENS)
         
         # Parse the response to extract feasibility assessment
         # This is a simplified implementation
@@ -353,5 +359,5 @@ Ensure each section provides unique, actionable technical insights. Build upon D
         Focus on providing actionable, runnable code examples.
         """
         
-        response = self.generate_response(prompt, temperature=0.5, max_tokens=8192)
+        response = self.generate_response(prompt, temperature=0.5, max_tokens=Config.OLLAMA_VALIDATION_MAX_TOKENS)
         return response.content

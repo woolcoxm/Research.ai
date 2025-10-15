@@ -43,9 +43,15 @@ class DeepSeekClient:
     def generate_response(self, 
                          prompt: str, 
                          context: Optional[str] = None,
-                         temperature: float = 0.7,
-                         max_tokens: int = 4096) -> LLMMessage:  # Set to 4096 to stay well under DeepSeek's 8192 limit
+                         temperature: float = None,
+                         max_tokens: int = None) -> LLMMessage:
         """Generate a response from DeepSeek"""
+        
+        # Use config defaults if not specified
+        if temperature is None:
+            temperature = Config.DEEPSEEK_DEFAULT_TEMPERATURE
+        if max_tokens is None:
+            max_tokens = Config.DEEPSEEK_DEFAULT_MAX_TOKENS
         
         # Build the messages array
         messages = []
@@ -82,7 +88,7 @@ class DeepSeekClient:
             messages[0]['content'] += citation_instruction
 
         request_data = {
-            "model": "deepseek-chat",
+            "model": Config.DEEPSEEK_MODEL,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -174,7 +180,7 @@ Ollama, I want to make sure this architectural plan covers everything needed. Wh
 
 FOCUS ON PLANNING DOCUMENTATION - save detailed code for the actual development phase."""
         
-        return self.generate_response(prompt, research_context, max_tokens=6144)  # Reduced to fit DeepSeek limit
+        return self.generate_response(prompt, research_context, max_tokens=Config.DEEPSEEK_STAGE5_MAX_TOKENS)
     
     def refine_analysis(self,
                        user_prompt: str,
@@ -200,7 +206,7 @@ FOCUS ON PLANNING DOCUMENTATION - save detailed code for the actual development 
         Focus on building consensus and addressing technical constraints.
         """
         
-        return self.generate_response(prompt, research_context, max_tokens=4096)  # Reduced to fit DeepSeek limit
+        return self.generate_response(prompt, research_context, max_tokens=Config.DEEPSEEK_STAGE2_MAX_TOKENS)
     
     def continue_discussion(self, user_prompt: str, research_context: str, ollama_response: str) -> LLMMessage:
         """Continue the discussion based on Ollama's latest points"""
@@ -245,7 +251,7 @@ Pick ONE area that needs more discussion based on Ollama's response. Be specific
 Research context: {research_context[:500]}...
 """
         
-        return self.generate_response(prompt, research_context, max_tokens=4096)  # Reduced to fit DeepSeek limit
+        return self.generate_response(prompt, research_context, max_tokens=Config.DEEPSEEK_STAGE5_MAX_TOKENS)
     
     def generate_multiple_documents(self,
                                   user_prompt: str,
@@ -293,7 +299,7 @@ TECHNICAL DISCUSSION: {conversation_summary}
 IMPORTANT: Focus on DESIGN and ARCHITECTURE documentation. Include minimal code (pseudocode/small examples ONLY).
 This is a planning document explaining WHAT and WHY, not a code implementation guide."""
 
-        arch_doc = self.generate_response(arch_prompt, research_context, temperature=0.3, max_tokens=8192)  # Max for DeepSeek
+        arch_doc = self.generate_response(arch_prompt, research_context, temperature=0.3, max_tokens=Config.DEEPSEEK_STAGE9_MAX_TOKENS)
         documents.append({
             "title": "System Architecture & Technical Specifications",
             "filename": "01_system_architecture.md",
@@ -346,7 +352,7 @@ TECHNICAL DISCUSSION: {conversation_summary}
 IMPORTANT: Focus on STRATEGY and PLANNING. Provide setup concepts and approaches, NOT detailed code.
 Save implementation details for the actual development phase."""
 
-        impl_doc = self.generate_response(impl_prompt, research_context, temperature=0.3, max_tokens=8192)  # Max for DeepSeek
+        impl_doc = self.generate_response(impl_prompt, research_context, temperature=0.3, max_tokens=Config.DEEPSEEK_STAGE9_MAX_TOKENS)
         documents.append({
             "title": "Implementation Guide & Development Plan",
             "filename": "02_implementation_guide.md",
@@ -398,7 +404,7 @@ TECHNICAL DISCUSSION: {conversation_summary}
 
 Include specific configurations, monitoring setup, and operational procedures."""
 
-        ops_doc = self.generate_response(ops_prompt, research_context, temperature=0.3, max_tokens=8192)  # Max for DeepSeek
+        ops_doc = self.generate_response(ops_prompt, research_context, temperature=0.3, max_tokens=Config.DEEPSEEK_STAGE9_MAX_TOKENS)
         documents.append({
             "title": "Security, Testing & Operations Guide",
             "filename": "03_security_testing_ops.md",
@@ -445,7 +451,7 @@ TECHNICAL DISCUSSION: {conversation_summary}
 
 Include complete API specifications, code examples, and integration patterns."""
 
-            api_doc = self.generate_response(api_prompt, research_context, temperature=0.3, max_tokens=8192)  # Max for DeepSeek
+            api_doc = self.generate_response(api_prompt, research_context, temperature=0.3, max_tokens=Config.DEEPSEEK_STAGE9_MAX_TOKENS)
             documents.append({
                 "title": "API Documentation & Integration Guide",
                 "filename": "04_api_documentation.md",
@@ -532,7 +538,7 @@ Each document is designed to be comprehensive and actionable. Download each docu
             This is planning documentation, not a code repository. Make it comprehensive enough for a team to understand 
             the architecture and plan development, but save detailed implementation for the development phase."""
             
-            return self.generate_response(prompt, research_context, temperature=0.3, max_tokens=8192)  # Max for DeepSeek
+            return self.generate_response(prompt, research_context, temperature=0.3, max_tokens=Config.DEEPSEEK_STAGE9_MAX_TOKENS)
     
     def validate_quality(self, content: str, criteria: List[str]) -> Dict[str, Any]:
         """Validate the quality of generated content against specific criteria"""
@@ -629,7 +635,7 @@ Return your response as a JSON object with this structure:
 
 Make each query specific, technical, and focused on actionable implementation details. Include queries for setup guides, code examples, production deployment, and operational procedures."""
 
-        response = self.generate_response(research_prompt, max_tokens=8192)
+        response = self.generate_response(research_prompt, max_tokens=Config.DEEPSEEK_STAGE4_MAX_TOKENS)
         
         try:
             # Try to parse JSON from the response
@@ -703,7 +709,7 @@ Return insights as a JSON array:
 
 Make insights actionable and technically specific."""
 
-        response = self.generate_response(insight_prompt, max_tokens=8192)
+        response = self.generate_response(insight_prompt, max_tokens=Config.DEEPSEEK_STAGE4_MAX_TOKENS)
         
         try:
             # Try to parse JSON array from response

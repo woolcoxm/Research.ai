@@ -7,14 +7,16 @@ import os
 import sys
 import logging
 from app.routes import app
+from config.settings import Config
 
-# Configure logging
+# Configure logging from environment
+log_level = getattr(logging, Config.LOG_LEVEL.upper(), logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('ai_research_system.log')
+        logging.FileHandler(Config.LOG_FILE)
     ]
 )
 
@@ -31,11 +33,17 @@ def main():
             logger.error("Please run this script from the project root directory")
             sys.exit(1)
         
+        # Validate configuration
+        Config.validate_config()
+        
+        # Print configuration summary
+        Config.print_config_summary()
+        
         # Run the Flask application
-        logger.info("AI Research System is running on http://localhost:5000")
+        logger.info(f"AI Research System is running on http://{Config.FLASK_HOST}:{Config.FLASK_PORT}")
         logger.info("Press Ctrl+C to stop the application")
         
-        app.run(debug=True, host='0.0.0.0', port=5000)
+        app.run(debug=Config.FLASK_DEBUG, host=Config.FLASK_HOST, port=Config.FLASK_PORT)
         
     except KeyboardInterrupt:
         logger.info("Shutting down AI Research System...")

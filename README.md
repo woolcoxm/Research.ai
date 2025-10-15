@@ -209,42 +209,136 @@ When research finishes:
 5. **Access the web interface**:
    Open http://localhost:5000 in your browser
 
-## Configuration
+## ⚙️ Configuration
 
-### Environment Variables
+The system is **fully configurable through environment variables**. All settings are loaded from a `.env` file - no hardcoded values!
 
-Create a `.env` file with the following variables:
+### Quick Configuration
+
+1. **Copy the example environment file**:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Edit `.env` and add your API keys** (required):
+   ```env
+   DEEPSEEK_API_KEY=your_deepseek_api_key_here
+   SERPER_API_KEY=your_serper_api_key_here
+   ```
+
+3. **Customize other settings** (optional - defaults work well)
+
+### Complete Configuration Reference
+
+#### 🔑 Required API Keys
 
 ```env
-# DeepSeek API Configuration
-DEEPSEEK_API_KEY=your_deepseek_api_key_here
-DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+# Get from: https://platform.deepseek.com/
+DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxx
 
-# Serper.dev API Configuration
-SERPER_API_KEY=your_serper_api_key_here
-
-# Ollama Configuration
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=qwen3-coder:latest
-
-# File Storage
-DEVPLAN_DIR=DEVPLAN
-
-# Application Settings
-MAX_SEARCH_RESULTS=5
-REQUEST_TIMEOUT=30
-
-# Note: MAX_CONVERSATION_ROUNDS is handled internally
-# The workflow continues until reaching COMPLETED stage (typically 20-40 rounds)
-# Maximum safety limit is 50 rounds
+# Get from: https://serper.dev/
+SERPER_API_KEY=xxxxxxxxxxxxx
 ```
 
-### Important Configuration Notes
+#### 🤖 LLM Provider Settings
 
-- **Workflow Duration**: The system runs until completion, typically 20-40 rounds depending on research complexity
-- **Context Windows**: DeepSeek uses up to 128K tokens, Ollama uses up to 32K tokens
-- **Token Limits**: DeepSeek responses capped at 2000-8000 tokens per message depending on stage
-- **Search Quota**: Each research session performs 12-18 initial searches, plus 2-8 additional deep-dive searches
+**DeepSeek Configuration:**
+```env
+DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+DEEPSEEK_MODEL=deepseek-chat              # Model to use
+DEEPSEEK_CONTEXT_WINDOW=128000            # 128K tokens
+DEEPSEEK_DEFAULT_TEMPERATURE=0.7          # Creativity (0.0-1.0)
+DEEPSEEK_DEFAULT_MAX_TOKENS=4096          # Default response length
+```
+
+**Ollama Configuration (Easy to Change!):**
+```env
+OLLAMA_BASE_URL=http://localhost:11434    # Change if Ollama runs elsewhere
+OLLAMA_MODEL=qwen3-coder:latest           # 🎯 Change this to use different model!
+OLLAMA_CONTEXT_WINDOW=32768               # Adjust based on your model
+OLLAMA_DEFAULT_TEMPERATURE=0.7            # Creativity (0.0-1.0)
+OLLAMA_DEFAULT_MAX_TOKENS=32768           # Response length limit
+```
+
+**Want to use a different Ollama model?** Just change `OLLAMA_MODEL`:
+- `llama3.1:latest` - Meta's Llama 3.1
+- `mistral:latest` - Mistral AI
+- `codellama:latest` - Code-specialized Llama
+- `deepseek-coder:latest` - Alternative DeepSeek model
+- Any other model from [ollama.com/library](https://ollama.com/library)
+
+#### 🌐 Flask Web Server Settings
+
+```env
+FLASK_HOST=0.0.0.0                        # 0.0.0.0 = all interfaces, 127.0.0.1 = localhost only
+FLASK_PORT=5000                           # Change if port 5000 is in use
+FLASK_DEBUG=True                          # Set to False in production
+FLASK_SECRET_KEY=your_secret_key_here     # Change in production!
+```
+
+#### 🔬 Research Workflow Settings
+
+```env
+MAX_CONVERSATION_ROUNDS=50                # Safety limit (workflow auto-completes)
+MAX_SEARCH_RESULTS=15                     # Results per search query
+REQUEST_TIMEOUT=120                       # API timeout in seconds
+```
+
+#### 🎛️ Advanced Token Limits (Per Stage)
+
+Fine-tune response lengths for each workflow stage:
+
+```env
+# DeepSeek token limits
+DEEPSEEK_STAGE1_MAX_TOKENS=8000          # Initial breakdown
+DEEPSEEK_STAGE2_MAX_TOKENS=2000          # Focused queries  
+DEEPSEEK_STAGE4_MAX_TOKENS=8000          # Research analysis
+DEEPSEEK_STAGE5_MAX_TOKENS=4000          # Discussions
+DEEPSEEK_STAGE7_MAX_TOKENS=8000          # Master compilation
+DEEPSEEK_STAGE9_MAX_TOKENS=8000          # Document generation
+
+# Ollama token limits
+OLLAMA_REVIEW_MAX_TOKENS=24576           # Critical reviews
+OLLAMA_DISCUSSION_MAX_TOKENS=32768       # Deep discussions
+OLLAMA_VALIDATION_MAX_TOKENS=8192        # Quick validations
+```
+
+#### 📁 File Storage
+
+```env
+DEVPLAN_DIR=DEVPLAN                      # Legacy planning directory
+OUTPUT_DIR=.                             # Where documents are saved
+```
+
+#### 📊 Logging
+
+```env
+LOG_LEVEL=INFO                           # DEBUG, INFO, WARNING, ERROR
+LOG_FILE=ai_research_system.log          # Log file name
+```
+
+### Configuration Tips
+
+**For Faster Research:**
+- Reduce `MAX_SEARCH_RESULTS` to 10
+- Lower token limits by 25%
+- Use a smaller Ollama model
+
+**For Deeper Research:**
+- Increase `MAX_SEARCH_RESULTS` to 20
+- Use maximum token limits
+- Increase `REQUEST_TIMEOUT` to 180
+
+**For Cost Optimization:**
+- Lower all DeepSeek token limits by 50%
+- Reduce `MAX_SEARCH_RESULTS` to 10
+- Use smaller context windows
+
+**For Different Ollama Models:**
+1. Pull the model: `ollama pull model-name:tag`
+2. Update `.env`: `OLLAMA_MODEL=model-name:tag`
+3. Adjust `OLLAMA_CONTEXT_WINDOW` based on model specs
+4. Restart the application: `python run.py`
 
 ### Ollama Setup
 

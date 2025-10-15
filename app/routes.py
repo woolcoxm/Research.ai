@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__)
-app.secret_key = 'ai_research_system_secret_key'  # In production, use a proper secret key
+app.secret_key = Config.FLASK_SECRET_KEY
 
 # Global session store for real-time updates (in production, use Redis or similar)
 global_sessions = {}

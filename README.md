@@ -1,25 +1,105 @@
 # AI Research System
 
-A collaborative AI research system where DeepSeek API and local Ollama (qwen3-coder) work together to generate, refine ideas, and create development plans with web research capabilities.
+An advanced automated research system where DeepSeek API (128K context) and local Ollama (qwen3-coder) collaborate through an 11-stage iterative workflow to conduct comprehensive research, analyze 100-200 sources, and generate specialized documentation.
 
-## Features
+## ✨ Features
 
-- 🤖 **Dual LLM Collaboration**: DeepSeek and Ollama work together to analyze and refine ideas
-- 🔍 **Web Research Integration**: Automated web searches using Serper.dev for comprehensive research
-- 📋 **Development Plan Generation**: Structured development plans stored in DEVPLAN folder
-- 🌐 **Web-based Interface**: User-friendly web interface (no command-line tools needed)
-- 📊 **Quality Management**: Automated quality gates and context evolution tracking
-- 💾 **File Management**: Export plans as JSON or Markdown
+- � **Dual LLM Collaboration**: DeepSeek (deep analysis) and Ollama (critical review) work together through structured discussions
+- 🔍 **Comprehensive Research**: Automated web searches analyzing 100-200 sources using Serper.dev API
+- 📊 **11-Stage Iterative Workflow**: Structured pipeline maximizing DeepSeek's 128K context window
+- 🎨 **Modern Web Interface**: Dark-themed UI with real-time activity feed and progress tracking
+- 💬 **Live LLM Conversations**: See every message exchanged between the LLMs in real-time
+- � **Detailed Progress Tracking**: Never wonder what's happening - continuous status updates
+- 📝 **Multi-Document Generation**: Produces 1-7 specialized markdown documents tailored to your research
+- 🔄 **Iterative Refinement**: LLMs review and improve documents until they meet quality standards
 
-## Architecture
+## 🏗️ Architecture
 
-The system follows a multi-phase workflow:
+### 11-Stage Research Pipeline
 
-1. **Initial Research**: Web searches for domain information and trends
-2. **LLM Collaboration**: DeepSeek and Ollama discuss and refine ideas
-3. **Targeted Research**: Additional searches based on identified gaps
-4. **Plan Generation**: Comprehensive development plan creation
-5. **Quality Validation**: Feasibility assessment and quality checks
+The system uses a sophisticated workflow designed to maximize the capabilities of DeepSeek's 128K context window:
+
+#### **Stage 1: Initial Breakdown**
+DeepSeek performs deep analysis of your research prompt, identifying:
+- Core objectives and goals
+- Key technologies involved
+- Technical requirements
+- Architecture needs
+- Implementation challenges
+- Research priorities (8-12 key discussion points)
+
+#### **Stage 2: Discuss Breakdown** (4 rounds)
+DeepSeek and Ollama collaborate to refine the breakdown and agree on research strategy:
+- Round 1: Ollama reviews and critiques the breakdown
+- Round 2: DeepSeek refines based on feedback
+- Round 3: Ollama proposes 10-15 specific research queries
+- Round 4: DeepSeek finalizes 12-18 research queries as JSON array
+
+#### **Stage 3: Execute Research**
+System executes all research queries in parallel:
+- Performs 12-18 web searches via Serper API
+- Gathers 100-200 source documents
+- Stores all results with URLs and snippets
+
+#### **Stage 4: Analyze Research**
+DeepSeek analyzes ALL research results using full context (up to 150 sources):
+- Extracts 15-20 key insights
+- Identifies technology recommendations
+- Documents architecture patterns
+- Notes implementation details
+- Identifies knowledge gaps
+
+#### **Stage 5: Discuss Findings** (5 rounds)
+LLMs extract and validate insights through structured discussion:
+- DeepSeek presents top 10 findings
+- Ollama critiques and questions
+- DeepSeek elaborates with evidence
+- Iterative refinement of understanding
+
+#### **Stage 6: Deep Dive** (7 rounds + dynamic searches)
+Detailed technical analysis with ability to trigger additional research:
+- LLMs alternate deep analysis and critical review
+- Can request additional searches when gaps found
+- Focus on implementation details and technical depth
+
+#### **Stage 7: Compile Information**
+DeepSeek creates master compilation using full 128K context:
+- Synthesizes ALL research and discussions
+- Comprehensive technical analysis
+- Architecture recommendations
+- Implementation roadmap
+
+#### **Stage 8: Discuss Compilation** (4 rounds)
+LLMs validate completeness and trigger final searches if needed:
+- Ollama reviews compilation for gaps
+- DeepSeek updates based on feedback
+- Additional searches if information missing
+- Final validation
+
+#### **Stage 9: Generate Documents**
+DeepSeek creates 1-7 specialized markdown documents:
+- Tailored to research topic
+- Each document serves specific purpose
+- Comprehensive and well-structured
+- Citations and references included
+
+#### **Stage 10: Refine Documents**
+LLMs iteratively improve each document (max 6 rounds per doc):
+- Ollama reviews each document for quality
+- DeepSeek revises based on feedback
+- Process repeats until Ollama approves
+- Ensures high-quality, polished output
+
+#### **Stage 11: Completed**
+Research finished - documents ready for download
+
+### Key Architecture Decisions
+
+- **DeepSeek as Context King**: With 128K context, DeepSeek handles analysis, synthesis, and document generation
+- **Ollama as Critic**: 32K context used for critical review, validation, and identifying gaps
+- **Iterative Discussions**: Multiple rounds ensure thorough exploration of topics
+- **Dynamic Search Triggers**: LLMs can request additional research when needed
+- **Document-Focused Output**: Practical, usable documentation rather than raw data
 
 ## Quick Start
 

@@ -19,26 +19,47 @@ class DeepSeekClient:
         if not self.api_key:
             raise ValueError("DeepSeek API key not configured")
     
-    def _make_request(self, endpoint: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Make API request to DeepSeek"""
+    def _make_request(self, endpoint: str, data: Dict[str, Any], retry_count: int = 3) -> Dict[str, Any]:
+        """Make API request to DeepSeek with retry logic"""
         url = f"{self.base_url}/{endpoint}"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
         
-        try:
-            response = requests.post(
-                url,
-                headers=headers,
-                json=data,
-                timeout=self.timeout
-            )
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"DeepSeek API request failed: {e}")
-            raise
+        last_error = None
+        for attempt in range(retry_count):
+            try:
+                logger.info(f"DeepSeek API request attempt {attempt + 1}/{retry_count}")
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json=data,
+                    timeout=self.timeout
+                )
+                response.raise_for_status()
+                return response.json()
+            except requests.exceptions.Timeout as e:
+                last_error = e
+                logger.warning(f"DeepSeek API timeout on attempt {attempt + 1}/{retry_count}: {e}")
+                if attempt < retry_count - 1:
+                    logger.info(f"Retrying in 5 seconds...")
+                    import time
+                    time.sleep(5)
+            except requests.exceptions.RequestException as e:
+                last_error = e
+                logger.error(f"DeepSeek API request failed on attempt {attempt + 1}/{retry_count}: {e}")
+                # Don't retry on non-timeout errors (like 4xx status codes)
+                if attempt < retry_count - 1 and (isinstance(e, requests.exceptions.ConnectionError) or 
+                                                   (hasattr(e.response, 'status_code') and e.response.status_code >= 500)):
+                    logger.info(f"Retrying in 5 seconds...")
+                    import time
+                    time.sleep(5)
+                else:
+                    raise
+        
+        logger.error(f"DeepSeek API request failed after {retry_count} attempts")
+        raise last_error
     
     def generate_response(self, 
                          prompt: str, 
@@ -261,8 +282,14 @@ Research context: {research_context[:500]}...
         
         documents = []
         
-        # Document 1: System Architecture & Technical Specifications
-        arch_prompt = f"""Create a COMPREHENSIVE SYSTEM ARCHITECTURE & DESIGN DOCUMENT for: {user_prompt}
+        # Reduce max tokens per document to avoid timeouts (6000 instead of 8000)
+        doc_max_tokens = 6000
+        logger.info(f"Generating multiple documents with {doc_max_tokens} max tokens each")
+        
+        try:
+            # Document 1: System Architecture & Technical Specifications
+            logger.info("Generating Document 1: System Architecture")
+            arch_prompt = f"""Create a COMPREHENSIVE SYSTEM ARCHITECTURE & DESIGN DOCUMENT for: {user_prompt}
 
 RESEARCH CONTEXT: {research_context}
 TECHNICAL DISCUSSION: {conversation_summary}
@@ -299,16 +326,27 @@ TECHNICAL DISCUSSION: {conversation_summary}
 IMPORTANT: Focus on DESIGN and ARCHITECTURE documentation. Include minimal code (pseudocode/small examples ONLY).
 This is a planning document explaining WHAT and WHY, not a code implementation guide."""
 
-        arch_doc = self.generate_response(arch_prompt, research_context, temperature=0.3, max_tokens=Config.DEEPSEEK_STAGE9_MAX_TOKENS)
-        documents.append({
-            "title": "System Architecture & Technical Specifications",
-            "filename": "01_system_architecture.md",
-            "content": arch_doc.content,
-            "category": "architecture"
-        })
+            arch_doc = self.generate_response(arch_prompt, research_context, temperature=0.3, max_tokens=doc_max_tokens)
+            documents.append({
+                "title": "System Architecture & Technical Specifications",
+                "filename": "01_system_architecture.md",
+                "content": arch_doc.content,
+                "category": "architecture"
+            })
+            logger.info(f"Document 1 generated successfully ({len(arch_doc.content)} chars)")
+        except Exception as e:
+            logger.error(f"Failed to generate System Architecture document: {e}")
+            documents.append({
+                "title": "System Architecture & Technical Specifications",
+                "filename": "01_system_architecture.md",
+                "content": f"# System Architecture\n\n*Error generating document: {str(e)}*\n\nPlease retry or check the logs for details.",
+                "category": "architecture"
+            })
 
-        # Document 2: Implementation Strategy & Development Roadmap
-        impl_prompt = f"""Create a DETAILED IMPLEMENTATION STRATEGY & DEVELOPMENT ROADMAP for: {user_prompt}
+        try:
+            # Document 2: Implementation Strategy & Development Roadmap
+            logger.info("Generating Document 2: Implementation Guide")
+            impl_prompt = f"""Create a DETAILED IMPLEMENTATION STRATEGY & DEVELOPMENT ROADMAP for: {user_prompt}
 
 RESEARCH CONTEXT: {research_context}
 TECHNICAL DISCUSSION: {conversation_summary}
@@ -352,16 +390,27 @@ TECHNICAL DISCUSSION: {conversation_summary}
 IMPORTANT: Focus on STRATEGY and PLANNING. Provide setup concepts and approaches, NOT detailed code.
 Save implementation details for the actual development phase."""
 
-        impl_doc = self.generate_response(impl_prompt, research_context, temperature=0.3, max_tokens=Config.DEEPSEEK_STAGE9_MAX_TOKENS)
-        documents.append({
-            "title": "Implementation Guide & Development Plan",
-            "filename": "02_implementation_guide.md",
-            "content": impl_doc.content,
-            "category": "implementation"
-        })
+            impl_doc = self.generate_response(impl_prompt, research_context, temperature=0.3, max_tokens=doc_max_tokens)
+            documents.append({
+                "title": "Implementation Guide & Development Plan",
+                "filename": "02_implementation_guide.md",
+                "content": impl_doc.content,
+                "category": "implementation"
+            })
+            logger.info(f"Document 2 generated successfully ({len(impl_doc.content)} chars)")
+        except Exception as e:
+            logger.error(f"Failed to generate Implementation Guide: {e}")
+            documents.append({
+                "title": "Implementation Guide & Development Plan",
+                "filename": "02_implementation_guide.md",
+                "content": f"# Implementation Guide\n\n*Error generating document: {str(e)}*\n\nPlease retry or check the logs for details.",
+                "category": "implementation"
+            })
 
-        # Document 3: Security, Testing & Operations
-        ops_prompt = f"""Create a COMPREHENSIVE SECURITY, TESTING & OPERATIONS GUIDE for: {user_prompt}
+        try:
+            # Document 3: Security, Testing & Operations
+            logger.info("Generating Document 3: Security, Testing & Operations")
+            ops_prompt = f"""Create a COMPREHENSIVE SECURITY, TESTING & OPERATIONS GUIDE for: {user_prompt}
 
 RESEARCH CONTEXT: {research_context}
 TECHNICAL DISCUSSION: {conversation_summary}
@@ -404,17 +453,28 @@ TECHNICAL DISCUSSION: {conversation_summary}
 
 Include specific configurations, monitoring setup, and operational procedures."""
 
-        ops_doc = self.generate_response(ops_prompt, research_context, temperature=0.3, max_tokens=Config.DEEPSEEK_STAGE9_MAX_TOKENS)
-        documents.append({
-            "title": "Security, Testing & Operations Guide",
-            "filename": "03_security_testing_ops.md",
-            "content": ops_doc.content,
-            "category": "operations"
-        })
+            ops_doc = self.generate_response(ops_prompt, research_context, temperature=0.3, max_tokens=doc_max_tokens)
+            documents.append({
+                "title": "Security, Testing & Operations Guide",
+                "filename": "03_security_testing_ops.md",
+                "content": ops_doc.content,
+                "category": "operations"
+            })
+            logger.info(f"Document 3 generated successfully ({len(ops_doc.content)} chars)")
+        except Exception as e:
+            logger.error(f"Failed to generate Security & Operations Guide: {e}")
+            documents.append({
+                "title": "Security, Testing & Operations Guide",
+                "filename": "03_security_testing_ops.md",
+                "content": f"# Security, Testing & Operations\n\n*Error generating document: {str(e)}*\n\nPlease retry or check the logs for details.",
+                "category": "operations"
+            })
 
         # Document 4: API Documentation & Integration Guide (if content is substantial enough)
         if len(conversation_summary) > 20000:  # Only create if there's substantial technical discussion
-            api_prompt = f"""Create an API DOCUMENTATION & INTEGRATION GUIDE for: {user_prompt}
+            try:
+                logger.info("Generating Document 4: API Documentation")
+                api_prompt = f"""Create an API DOCUMENTATION & INTEGRATION GUIDE for: {user_prompt}
 
 RESEARCH CONTEXT: {research_context}
 TECHNICAL DISCUSSION: {conversation_summary}
@@ -451,13 +511,22 @@ TECHNICAL DISCUSSION: {conversation_summary}
 
 Include complete API specifications, code examples, and integration patterns."""
 
-            api_doc = self.generate_response(api_prompt, research_context, temperature=0.3, max_tokens=Config.DEEPSEEK_STAGE9_MAX_TOKENS)
-            documents.append({
-                "title": "API Documentation & Integration Guide",
-                "filename": "04_api_documentation.md",
-                "content": api_doc.content,
-                "category": "api"
-            })
+                api_doc = self.generate_response(api_prompt, research_context, temperature=0.3, max_tokens=doc_max_tokens)
+                documents.append({
+                    "title": "API Documentation & Integration Guide",
+                    "filename": "04_api_documentation.md",
+                    "content": api_doc.content,
+                    "category": "api"
+                })
+                logger.info(f"Document 4 generated successfully ({len(api_doc.content)} chars)")
+            except Exception as e:
+                logger.error(f"Failed to generate API Documentation: {e}")
+                documents.append({
+                    "title": "API Documentation & Integration Guide",
+                    "filename": "04_api_documentation.md",
+                    "content": f"# API Documentation\n\n*Error generating document: {str(e)}*\n\nPlease retry or check the logs for details.",
+                    "category": "api"
+                })
 
         logger.info(f"Generated {len(documents)} specialized documents")
         return documents

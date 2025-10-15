@@ -6,6 +6,7 @@ class AIResearchSystem {
         this.currentSession = null;
         this.currentPlan = null;
         this.displayedMessages = new Set(); // Track displayed messages to avoid duplicates
+        this.userScrolled = {}; // Track if user has manually scrolled each container
         this.init();
     }
 
@@ -46,6 +47,91 @@ class AIResearchSystem {
         document.getElementById('export-plan').addEventListener('click', () => {
             this.exportPlan();
         });
+
+        // Track manual scrolling on conversation containers
+        this.setupScrollTracking();
+    }
+
+    setupScrollTracking() {
+        // Track when user manually scrolls the status or message containers
+        const containers = [
+            'status-messages', 
+            'conversation-messages', 
+            'deepseekMessages', 
+            'ollamaMessages'
+        ];
+        
+        containers.forEach(containerId => {
+            // Initialize to false (allow auto-scroll by default)
+            this.userScrolled[containerId] = false;
+            
+            const container = document.getElementById(containerId);
+            if (container) {
+                const scrollHandler = () => {
+                    // Calculate if user is at the bottom
+                    const scrollTop = container.scrollTop;
+                    const scrollHeight = container.scrollHeight;
+                    const clientHeight = container.clientHeight;
+                    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+                    const isAtBottom = distanceFromBottom <= 50;
+                    
+                    const wasScrolled = this.userScrolled[containerId];
+                    this.userScrolled[containerId] = !isAtBottom;
+                    
+                    // Log scroll state changes for debugging
+                    if (wasScrolled !== this.userScrolled[containerId]) {
+                        console.log(`[Scroll] ${containerId}: ${this.userScrolled[containerId] ? 'User scrolled up' : 'At bottom - auto-scroll enabled'} (distance: ${distanceFromBottom.toFixed(0)}px)`);
+                    }
+                };
+                
+                // Set initial state
+                scrollHandler();
+                
+                container.addEventListener('scroll', scrollHandler);
+                console.log(`[Init] Scroll tracking enabled for: ${containerId}`);
+            } else {
+                console.warn(`[Init] Container not found: ${containerId}`);
+            }
+        });
+    }
+
+    shouldAutoScroll(container) {
+        // Auto-scroll if user hasn't manually scrolled up
+        if (!container || !container.id) {
+            console.log('[Scroll] No container or ID - auto-scroll allowed');
+            return true;
+        }
+        
+        // Initialize if not tracked yet
+        if (this.userScrolled[container.id] === undefined) {
+            console.log(`[Scroll] ${container.id}: Not tracked yet, initializing to false`);
+            this.userScrolled[container.id] = false;
+        }
+        
+        const shouldScroll = !this.userScrolled[container.id];
+        console.log(`[Scroll] ${container.id}: shouldAutoScroll = ${shouldScroll}, userScrolled = ${this.userScrolled[container.id]}`);
+        return shouldScroll;
+    }
+
+    smartScroll(container) {
+        // Only scroll to bottom if user is already near the bottom
+        if (!container) {
+            console.warn('[Scroll] smartScroll called with null container');
+            return;
+        }
+        
+        // Store current scroll position for debugging
+        const currentScroll = container.scrollTop;
+        const scrollHeight = container.scrollHeight;
+        const clientHeight = container.clientHeight;
+        const distanceFromBottom = scrollHeight - currentScroll - clientHeight;
+        
+        if (this.shouldAutoScroll(container)) {
+            console.log(`[Scroll] Auto-scrolling ${container.id} to bottom (was ${distanceFromBottom.toFixed(0)}px from bottom)`);
+            container.scrollTop = container.scrollHeight;
+        } else {
+            console.log(`[Scroll] PRESERVING scroll position for ${container.id} (user scrolled ${distanceFromBottom.toFixed(0)}px from bottom)`);
+        }
     }
 
     async checkSystemStatus() {
@@ -258,7 +344,7 @@ class AIResearchSystem {
         const lastStatus = container.lastElementChild;
         if (!lastStatus || !lastStatus.textContent.includes(`Round ${statusData.conversation_round}: ${currentStage}`)) {
             container.appendChild(statusElement);
-            container.scrollTop = container.scrollHeight;
+            this.smartScroll(container);
         }
     }
 
@@ -305,7 +391,7 @@ class AIResearchSystem {
         `;
         
         container.appendChild(messageElement);
-        container.scrollTop = container.scrollHeight;
+        this.smartScroll(container);
     }
 
     createMessagePreview(content) {
@@ -620,8 +706,8 @@ class AIResearchSystem {
             container.appendChild(messageElement);
         });
 
-        // Scroll to bottom
-        container.scrollTop = container.scrollHeight;
+        // Smart scroll - only if user is at bottom
+        this.smartScroll(container);
     }
 
     formatMessageContent(content) {

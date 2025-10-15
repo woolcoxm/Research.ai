@@ -38,7 +38,7 @@ class Config:
     OLLAMA_CONTEXT_WINDOW = int(os.getenv('OLLAMA_CONTEXT_WINDOW', '32768'))
     OLLAMA_DEFAULT_TEMPERATURE = float(os.getenv('OLLAMA_DEFAULT_TEMPERATURE', '0.7'))
     OLLAMA_DEFAULT_MAX_TOKENS = int(os.getenv('OLLAMA_DEFAULT_MAX_TOKENS', '32768'))
-    OLLAMA_TIMEOUT = int(os.getenv('OLLAMA_TIMEOUT', '300'))  # 5 minutes default
+    OLLAMA_TIMEOUT = int(os.getenv('OLLAMA_TIMEOUT', '90000'))  # default for deep analysis
     
     # Ollama token limits for different operations
     OLLAMA_REVIEW_MAX_TOKENS = int(os.getenv('OLLAMA_REVIEW_MAX_TOKENS', '24576'))

@@ -2,12 +2,13 @@ import logging
 import json
 import uuid
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, session, send_file
 from config.settings import Config
 from core.conversation_orchestrator import ConversationOrchestrator
 from core.models import ResearchContext, ConversationStage
 from utils.file_manager import FileManager
+from utils.session_persistence import save_session, load_session, list_saved_sessions, delete_session, load_all_sessions
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,6 +23,62 @@ global_sessions = {}
 
 # Status tracking for active sessions
 active_status = {}
+
+# Load saved sessions on startup
+logger.info("Loading saved sessions from disk...")
+try:
+    loaded_sessions = load_all_sessions()
+    # Convert to JSON-safe format for global_sessions
+    for sid, sdata in loaded_sessions.items():
+        context = sdata.get('context')
+        messages = sdata.get('messages', [])
+        
+        safe_messages = [
+            {
+                'llm_type': msg.llm_type.value if hasattr(msg, 'llm_type') else 'system',
+                'content': msg.content[:200] + '...' if len(msg.content) > 200 else msg.content,
+                'timestamp': msg.timestamp.isoformat() if hasattr(msg, 'timestamp') else datetime.now().isoformat()
+            }
+            for msg in messages[-6:]
+        ]
+        
+        all_messages_safe = [
+            {
+                'llm_type': msg.llm_type.value if hasattr(msg, 'llm_type') else 'system',
+                'content': msg.content,
+                'timestamp': msg.timestamp.isoformat() if hasattr(msg, 'timestamp') else datetime.now().isoformat(),
+                'id': msg.id if hasattr(msg, 'id') else str(uuid.uuid4())
+            }
+            for msg in messages
+        ]
+        
+        global_sessions[sid] = {
+            'session_id': sid,
+            'current_stage': context.current_stage.value if context and hasattr(context, 'current_stage') else 'initial_breakdown',
+            'conversation_round': sdata.get('current_round', 0),
+            'context_maturity': context.context_maturity if context and hasattr(context, 'context_maturity') else 0.0,
+            'quality_gates_passed': context.quality_gates_passed if context and hasattr(context, 'quality_gates_passed') else [],
+            'message_count': len(messages),
+            'search_count': sdata.get('search_count', 0),
+            'latest_messages': safe_messages,
+            'all_messages': all_messages_safe,
+            'completed': sdata.get('completed', False),
+            'failed': sdata.get('failed', False),
+            'error': sdata.get('error'),
+            'saved_files': None,
+            'last_updated': sdata.get('saved_at', datetime.now().isoformat()),
+            'user_prompt': context.original_query[:100] + '...' if context and hasattr(context, 'original_query') and len(context.original_query) > 100 else (context.original_query if context and hasattr(context, 'original_query') else ''),
+            'current_round': sdata.get('current_round', 0),
+            'status': sdata.get('status', 'in_progress')
+        }
+    
+    logger.info(f"Loaded {len(loaded_sessions)} saved sessions")
+except Exception as e:
+    logger.error(f"Error loading saved sessions: {e}")
+
+# Session cleanup configuration
+MAX_STORED_SESSIONS = 50  # Limit number of stored sessions
+SESSION_TIMEOUT_HOURS = 24  # Auto-cleanup sessions older than 24 hours
 
 def update_status(session_id, llm_name, activity, details="", research_context=None):
     """Update the current status for a session"""
@@ -46,32 +103,76 @@ def clear_status(session_id):
         active_status[session_id]['is_active'] = False
         active_status[session_id]['activity'] = 'Completed'
 
+def cleanup_old_sessions():
+    """Remove old sessions to prevent memory leaks"""
+    try:
+        current_time = datetime.now()
+        cutoff_time = current_time - timedelta(hours=SESSION_TIMEOUT_HOURS)
+        
+        # Find sessions to remove
+        sessions_to_remove = []
+        for session_id, session_data in global_sessions.items():
+            last_updated = datetime.fromisoformat(session_data.get('last_updated', current_time.isoformat()))
+            if last_updated < cutoff_time:
+                sessions_to_remove.append(session_id)
+        
+        # Remove old sessions
+        for session_id in sessions_to_remove:
+            del global_sessions[session_id]
+            if session_id in active_status:
+                del active_status[session_id]
+            logger.info(f"Cleaned up old session: {session_id}")
+        
+        # Also enforce max session limit
+        if len(global_sessions) > MAX_STORED_SESSIONS:
+            # Sort by last_updated and keep only the most recent
+            sorted_sessions = sorted(
+                global_sessions.items(),
+                key=lambda x: x[1].get('last_updated', ''),
+                reverse=True
+            )
+            
+            # Remove oldest sessions beyond limit
+            for session_id, _ in sorted_sessions[MAX_STORED_SESSIONS:]:
+                del global_sessions[session_id]
+                if session_id in active_status:
+                    del active_status[session_id]
+                logger.info(f"Cleaned up excess session: {session_id}")
+        
+        if sessions_to_remove or len(global_sessions) > MAX_STORED_SESSIONS:
+            logger.info(f"Session cleanup: {len(sessions_to_remove)} old, now storing {len(global_sessions)} sessions")
+    except Exception as e:
+        logger.error(f"Error during session cleanup: {e}")
+
 def _update_global_session(session_id, research_context, completed=False, failed=False, error=None, saved_files=None):
-    """Update global session store for real-time tracking"""
-    # Get latest messages (last 6 for display)
-    latest_messages = []
-    for msg in research_context.messages[-6:]:
-        latest_messages.append({
+    """Update global session store for real-time tracking - OPTIMIZED"""
+    # Get latest messages (last 6 for display) - using list comprehension
+    latest_messages = [
+        {
             'llm_type': msg.llm_type.value,
-            'content': msg.content[:200] + '...' if len(msg.content) > 200 else msg.content,  # Truncate for UI
+            'content': msg.content[:200] + '...' if len(msg.content) > 200 else msg.content,
             'timestamp': msg.timestamp.isoformat()
-        })
+        }
+        for msg in research_context.messages[-6:]
+    ]
     
-    # Store ALL messages organized by LLM type for conversation history
-    all_messages = []
-    for msg in research_context.messages:
-        all_messages.append({
+    # Store ALL messages - optimized with list comprehension
+    all_messages = [
+        {
             'llm_type': msg.llm_type.value,
             'content': msg.content,
             'timestamp': msg.timestamp.isoformat(),
             'id': msg.id
-        })
+        }
+        for msg in research_context.messages
+    ]
     
     logger.info(f"Updating global session {session_id}: {len(all_messages)} messages stored")
     
-    # Build research metrics
+    # Build research metrics - pre-calculate once
+    total_searches = len(research_context.initial_searches) + len(research_context.targeted_searches)
     research_metrics = {
-        'total_searches': len(research_context.initial_searches) + len(research_context.targeted_searches),
+        'total_searches': total_searches,
         'key_insights': len(research_context.key_insights),
         'conversation_rounds': research_context.conversation_round,
         'context_maturity': research_context.context_maturity,
@@ -94,8 +195,35 @@ def _update_global_session(session_id, research_context, completed=False, failed
         'error': error,
         'saved_files': saved_files,  # Add saved files for completion banner
         'last_updated': datetime.now().isoformat(),
-        'user_prompt': research_context.user_prompt[:100] + '...' if len(research_context.user_prompt) > 100 else research_context.user_prompt
+        'user_prompt': research_context.user_prompt[:100] + '...' if len(research_context.user_prompt) > 100 else research_context.user_prompt,
+        'current_round': research_context.conversation_round,
+        'status': 'completed' if completed else ('failed' if failed else 'in_progress')
     }
+    
+    # Auto-save session to disk after each update (with full context and messages)
+    try:
+        persistence_data = {
+            'session_id': research_context.session_id,
+            'current_stage': research_context.current_stage.value,
+            'conversation_round': research_context.conversation_round,
+            'context_maturity': research_context.context_maturity,
+            'quality_gates_passed': research_context.quality_gates_passed,
+            'message_count': len(research_context.messages),
+            'search_count': len(research_context.initial_searches) + len(research_context.targeted_searches),
+            'completed': completed,
+            'failed': failed,
+            'error': error,
+            'last_updated': datetime.now().isoformat(),
+            'user_prompt': research_context.user_prompt,
+            'current_round': research_context.conversation_round,
+            'status': 'completed' if completed else ('failed' if failed else 'in_progress'),
+            'context': research_context,  # Full context for persistence
+            'messages': research_context.messages  # Full messages for persistence
+        }
+        save_session(session_id, persistence_data)
+        logger.info(f"Session {session_id} auto-saved to disk")
+    except Exception as e:
+        logger.error(f"Failed to auto-save session {session_id}: {e}")
 
 # Initialize components
 try:
@@ -141,6 +269,10 @@ def start_research():
         return jsonify({'error': 'System not properly initialized'}), 500
     
     try:
+        # Cleanup old sessions periodically
+        if len(global_sessions) > 0 and len(global_sessions) % 10 == 0:
+            cleanup_old_sessions()
+        
         data = request.get_json()
         user_prompt = data.get('prompt', '').strip()
         
@@ -616,6 +748,112 @@ def get_conversations(session_id):
         
     except Exception as e:
         logger.error(f"Failed to get conversations: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/sessions/list', methods=['GET'])
+def list_sessions():
+    """Get list of all saved sessions"""
+    try:
+        sessions = list_saved_sessions()
+        return jsonify({'sessions': sessions})
+    except Exception as e:
+        logger.error(f"Failed to list sessions: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/sessions/restore/<session_id>', methods=['POST'])
+def restore_session(session_id):
+    """Restore a previously saved session"""
+    try:
+        session_data = load_session(session_id)
+        
+        if not session_data:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        # Extract context and messages
+        context = session_data.get('context')
+        messages = session_data.get('messages', [])
+        
+        # Create JSON-safe version for global_sessions (without raw objects)
+        safe_messages = [
+            {
+                'llm_type': msg.llm_type.value if hasattr(msg, 'llm_type') else 'system',
+                'content': msg.content[:200] + '...' if len(msg.content) > 200 else msg.content,
+                'timestamp': msg.timestamp.isoformat() if hasattr(msg, 'timestamp') else datetime.now().isoformat()
+            }
+            for msg in messages[-6:]  # Last 6 messages
+        ]
+        
+        all_messages_safe = [
+            {
+                'llm_type': msg.llm_type.value if hasattr(msg, 'llm_type') else 'system',
+                'content': msg.content,
+                'timestamp': msg.timestamp.isoformat() if hasattr(msg, 'timestamp') else datetime.now().isoformat(),
+                'id': msg.id if hasattr(msg, 'id') else str(uuid.uuid4())
+            }
+            for msg in messages
+        ]
+        
+        # Update global sessions with JSON-safe data
+        global_sessions[session_id] = {
+            'session_id': session_id,
+            'current_stage': context.current_stage.value if context else 'initial_breakdown',
+            'conversation_round': session_data.get('current_round', 0),
+            'context_maturity': context.context_maturity if context else 0.0,
+            'quality_gates_passed': context.quality_gates_passed if context else [],
+            'message_count': len(messages),
+            'search_count': session_data.get('search_count', 0),
+            'latest_messages': safe_messages,
+            'all_messages': all_messages_safe,
+            'completed': session_data.get('completed', False),
+            'failed': session_data.get('failed', False),
+            'error': session_data.get('error'),
+            'saved_files': None,
+            'last_updated': datetime.now().isoformat(),
+            'user_prompt': context.original_query[:100] + '...' if context and len(context.original_query) > 100 else (context.original_query if context else ''),
+            'current_round': session_data.get('current_round', 0),
+            'status': session_data.get('status', 'in_progress')
+        }
+        
+        # Set as current session
+        session['current_session'] = session_id
+        
+        logger.info(f"Restored session {session_id}")
+        return jsonify({
+            'session_id': session_id,
+            'message': 'Session restored successfully',
+            'session_data': {
+                'session_id': session_id,
+                'user_prompt': context.original_query if context else 'Unknown',
+                'message_count': len(messages),
+                'saved_at': session_data.get('saved_at'),
+                'status': session_data.get('status', 'in_progress')
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to restore session {session_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/sessions/delete/<session_id>', methods=['DELETE'])
+def delete_saved_session(session_id):
+    """Delete a saved session"""
+    try:
+        success = delete_session(session_id)
+        
+        if success:
+            # Also remove from global_sessions if present
+            if session_id in global_sessions:
+                del global_sessions[session_id]
+            
+            return jsonify({'message': 'Session deleted successfully'})
+        else:
+            return jsonify({'error': 'Session not found'}), 404
+            
+    except Exception as e:
+        logger.error(f"Failed to delete session {session_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 

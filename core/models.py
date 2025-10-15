@@ -54,6 +54,7 @@ class LLMMessage:
     context_references: List[str] = field(default_factory=list)
     confidence_score: float = 0.0
     quality_issues: List[str] = field(default_factory=list)
+    metadata: Optional[Dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass

@@ -873,6 +873,24 @@
                     <button class="start-button" id="startResearchBtn">
                         <i class="fas fa-rocket"></i> Begin Automated Research
                     </button>
+                    
+                    <!-- Load Previous Session -->
+                    <div style="margin-top: 30px; padding-top: 30px; border-top: 1px solid var(--border-color);">
+                        <h4 style="margin-bottom: 15px; font-size: 1.1rem; color: var(--text-muted);">
+                            <i class="fas fa-history"></i> Load Previous Session
+                        </h4>
+                        <div style="display: flex; gap: 10px; align-items: flex-start;">
+                            <select class="form-select" id="savedSessionsDropdown" style="flex: 1; background: var(--bg-darker); color: var(--text-light); border: 1px solid var(--border-color); padding: 12px; border-radius: 8px;">
+                                <option value="">Select a saved session...</option>
+                            </select>
+                            <button class="btn btn-outline-primary" id="loadSessionBtn" style="padding: 12px 24px; border-radius: 8px;" disabled>
+                                <i class="fas fa-folder-open"></i> Load
+                            </button>
+                            <button class="btn btn-outline-danger" id="deleteSessionBtn" style="padding: 12px 24px; border-radius: 8px;" disabled>
+                                <i class="fas fa-trash"></i> Delete
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1140,6 +1158,8 @@
             setupNavigation();
             setupStartButton();
             checkSystemStatus();
+            loadSavedSessions();
+            setupSessionControls();
         });
 
         // Navigation
@@ -1544,6 +1564,89 @@
                 'completed': 11
             };
             return stages[stage] || null;
+        }
+
+        // Session Management Functions
+        async function loadSavedSessions() {
+            try {
+                const response = await fetch('/sessions/list');
+                const data = await response.json();
+                
+                const dropdown = document.getElementById('savedSessionsDropdown');
+                dropdown.innerHTML = '<option value="">Select a saved session...</option>';
+                
+                if (data.sessions && data.sessions.length > 0) {
+                    data.sessions.forEach(session => {
+                        const option = document.createElement('option');
+                        option.value = session.session_id;
+                        const savedDate = new Date(session.saved_at).toLocaleString();
+                        const query = session.query.substring(0, 60) + (session.query.length > 60 ? '...' : '');
+                        option.textContent = `${savedDate} - ${query}`;
+                        dropdown.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to load saved sessions:', error);
+            }
+        }
+
+        function setupSessionControls() {
+            const dropdown = document.getElementById('savedSessionsDropdown');
+            const loadBtn = document.getElementById('loadSessionBtn');
+            const deleteBtn = document.getElementById('deleteSessionBtn');
+
+            dropdown.addEventListener('change', function() {
+                const hasSelection = this.value !== '';
+                loadBtn.disabled = !hasSelection;
+                deleteBtn.disabled = !hasSelection;
+            });
+
+            loadBtn.addEventListener('click', async function() {
+                const sessionId = dropdown.value;
+                if (!sessionId) return;
+
+                try {
+                    const response = await fetch(`/sessions/restore/${sessionId}`, {
+                        method: 'POST'
+                    });
+                    const data = await response.json();
+
+                    if (data.session_id) {
+                        currentSessionId = data.session_id;
+                        
+                        // Switch to progress tab and start polling
+                        switchTab('progress');
+                        startStatusPolling();
+                        startConversationPolling();
+                        
+                        alert('Session restored successfully!');
+                    }
+                } catch (error) {
+                    console.error('Failed to restore session:', error);
+                    alert('Failed to restore session');
+                }
+            });
+
+            deleteBtn.addEventListener('click', async function() {
+                const sessionId = dropdown.value;
+                if (!sessionId) return;
+
+                if (!confirm('Are you sure you want to delete this session?')) return;
+
+                try {
+                    const response = await fetch(`/sessions/delete/${sessionId}`, {
+                        method: 'DELETE'
+                    });
+
+                    if (response.ok) {
+                        alert('Session deleted successfully');
+                        loadSavedSessions(); // Refresh the list
+                    }
+                } catch (error) {
+                    console.error('Failed to delete session:', error);
+                    alert('Failed to delete session');
+                }
+            });
         }
     </script>
 </body>

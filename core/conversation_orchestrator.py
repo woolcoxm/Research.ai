@@ -29,6 +29,9 @@ class ConversationOrchestrator:
         self._current_ollama_summary = ""
         self._current_context = None  # Store current research context
         self.status_callback = None
+        # Cache for expensive operations
+        self._summary_cache = {}
+        self._cache_round = 0
         
         logger.info("Conversation orchestrator initialized with new iterative workflow")
     
@@ -960,39 +963,54 @@ Is this now ready? State "APPROVED" if yes, or provide additional feedback."""
         return ""
     
     def _build_research_summary(self, context: ResearchContext, max_tokens: Optional[int] = None) -> str:
-        """Build research summary for LLM context"""
-        summary_parts = []
+        """Build research summary for LLM context - OPTIMIZED with caching"""
+        # Create cache key based on message count and max_tokens
+        cache_key = f"{len(context.messages)}_{max_tokens}_{len(context.key_insights)}"
         
-        # Overview
+        # Return cached summary if available
+        if cache_key in self._summary_cache:
+            return self._summary_cache[cache_key]
+        
+        # Pre-calculate sizes once
         total_searches = len(context.initial_searches) + len(context.targeted_searches)
-        summary_parts.append(f"PROJECT: {context.user_prompt}")
-        summary_parts.append(f"RESEARCH: {total_searches} searches, {len(context.key_insights)} insights, {len(context.messages)} messages")
-        summary_parts.append("")
+        insights_count = len(context.key_insights)
+        messages_count = len(context.messages)
         
-        # Key insights
+        # Use list comprehension for faster building
+        summary_parts = [
+            f"PROJECT: {context.user_prompt}",
+            f"RESEARCH: {total_searches} searches, {insights_count} insights, {messages_count} messages",
+            ""
+        ]
+        
+        # Key insights - optimized with list comprehension
         if context.key_insights:
             summary_parts.append("KEY INSIGHTS:")
             max_insights = 30 if max_tokens is None else 10
-            for insight in context.key_insights[:max_insights]:
-                summary_parts.append(f"• {insight['content'][:200]}")
+            summary_parts.extend([f"• {insight['content'][:200]}" for insight in context.key_insights[:max_insights]])
             summary_parts.append("")
         
-        # Recent conversation
+        # Recent conversation - optimized with list comprehension
         if context.messages:
             summary_parts.append("RECENT DISCUSSION:")
             recent = context.messages[-5:] if max_tokens else context.messages[-10:]
-            for msg in recent:
-                preview = msg.content[:300] if max_tokens else msg.content[:500]
-                summary_parts.append(f"[{msg.llm_type.value}]: {preview}...")
+            char_limit = 300 if max_tokens else 500
+            summary_parts.extend([f"[{msg.llm_type.value}]: {msg.content[:char_limit]}..." for msg in recent])
         
         full_summary = "\n".join(summary_parts)
         
         # Truncate if needed
         if max_tokens:
-            # Rough estimate: 4 chars per token
-            max_chars = max_tokens * 4
+            max_chars = max_tokens * 4  # Rough estimate: 4 chars per token
             if len(full_summary) > max_chars:
                 full_summary = full_summary[:max_chars] + "\n..."
+        
+        # Cache the result (limit cache size to last 10 entries)
+        self._summary_cache[cache_key] = full_summary
+        if len(self._summary_cache) > 10:
+            # Remove oldest entry (first item)
+            oldest_key = next(iter(self._summary_cache))
+            del self._summary_cache[oldest_key]
         
         return full_summary
     

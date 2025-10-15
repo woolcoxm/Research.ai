@@ -101,6 +101,72 @@ Research finished - documents ready for download
 - **Dynamic Search Triggers**: LLMs can request additional research when needed
 - **Document-Focused Output**: Practical, usable documentation rather than raw data
 
+## 🎨 User Interface
+
+The system features a modern dark-themed web interface with comprehensive real-time visibility into the research process.
+
+### Navigation Sections
+
+The sidebar provides 4 main navigation sections:
+
+#### 1. 🚀 Start Research
+- Enter your research prompt (e.g., "Build a web scraping system with Python")
+- Start button initiates the 11-stage workflow
+- Session management and research initiation
+
+#### 2. 📊 Progress Tracker
+**Metric Cards** display real-time statistics:
+- Total Rounds: Number of LLM discussion rounds completed
+- Web Searches: Count of research queries executed
+- Research Sources: Number of sources analyzed (typically 100-200)
+- Generated Docs: Count of markdown documents created
+
+**Stage Pipeline** shows all 11 stages with visual indicators:
+- ⚪ Not Started (gray): Stage not yet reached
+- 🔵 In Progress (pulsing blue): Currently executing
+- ✅ Completed (green): Stage finished
+
+#### 3. 📡 Live Activity Feed
+Real-time stream of ALL system activity:
+- Every status update from the workflow
+- LLM actions ("Analyzing research results...", "Reviewing document...")
+- Stage transitions ("Moving to Stage 5: Discuss Findings")
+- Search operations ("Executing 12 web searches...")
+- Timestamps for each activity
+- Expandable/collapsible for space management
+- Auto-scrolls to show latest activity
+
+**Never wonder "is it stuck?"** - The activity feed provides continuous visibility into what's happening.
+
+#### 4. 💬 LLM Conversations
+Side-by-side conversation panels showing full message history:
+
+**DeepSeek Panel** (left):
+- All messages sent by DeepSeek
+- Analysis results, research findings, document generations
+- Scrollable with 300px max height per message
+
+**Ollama Panel** (right):
+- All messages sent by Ollama
+- Critical reviews, feedback, questions
+- Scrollable with 300px max height per message
+
+### Real-Time Updates
+
+The interface polls for updates automatically:
+- **Status Updates**: Every 2 seconds (current stage, metrics, activities)
+- **Conversation Updates**: Every 3 seconds (new LLM messages)
+- No page refresh needed - everything updates live
+- Smooth animations and transitions for state changes
+
+### Completion Experience
+
+When research finishes:
+- Animated completion banner appears
+- Download buttons for each generated document
+- Success metrics displayed
+- Option to start new research
+
 ## Quick Start
 
 ### Prerequisites
@@ -165,14 +231,20 @@ OLLAMA_MODEL=qwen3-coder:latest
 DEVPLAN_DIR=DEVPLAN
 
 # Application Settings
-MAX_CONVERSATION_ROUNDS=4
 MAX_SEARCH_RESULTS=5
 REQUEST_TIMEOUT=30
 
-# Quality Settings
-MIN_CONTEXT_MATURITY=0.8
-MIN_PLAN_QUALITY=0.7
+# Note: MAX_CONVERSATION_ROUNDS is handled internally
+# The workflow continues until reaching COMPLETED stage (typically 20-40 rounds)
+# Maximum safety limit is 50 rounds
 ```
+
+### Important Configuration Notes
+
+- **Workflow Duration**: The system runs until completion, typically 20-40 rounds depending on research complexity
+- **Context Windows**: DeepSeek uses up to 128K tokens, Ollama uses up to 32K tokens
+- **Token Limits**: DeepSeek responses capped at 2000-8000 tokens per message depending on stage
+- **Search Quota**: Each research session performs 12-18 initial searches, plus 2-8 additional deep-dive searches
 
 ### Ollama Setup
 
@@ -189,132 +261,341 @@ ollama pull qwen3-coder:latest
 ollama list
 ```
 
-## Usage
+## 📖 Usage Guide
 
-### Web Interface
+### Starting a Research Session
 
-1. **Start Research**: Enter your project idea in the prompt field
-2. **Monitor Progress**: Watch the conversation between DeepSeek and Ollama
-3. **Review Research**: See web search results and key insights
-4. **Generate Plan**: Create and save development plans
-5. **Export Plans**: Download plans as Markdown files
+1. Navigate to http://localhost:5000
+2. Enter your research prompt in the input field (be specific!)
+3. Click "Start Research"
+4. Monitor progress through the 4 interface sections
+
+### Example Prompts
+
+**Good prompts are specific and actionable**:
+- ✅ "Build a Python web scraping system that handles JavaScript-rendered content and stores data in PostgreSQL"
+- ✅ "Design a microservices architecture for a real-time chat application using Node.js and Redis"
+- ✅ "Create a machine learning pipeline for sentiment analysis of customer reviews using transformers"
+
+**Poor prompts are vague**:
+- ❌ "Make a website"
+- ❌ "AI project"
+- ❌ "Something with data"
+
+### Monitoring the Workflow
+
+**Progress Tracker Section**:
+- Watch the stage pipeline progress through all 11 stages
+- Monitor metrics: rounds, searches, sources, documents
+- Current stage indicator shows exactly where the system is
+
+**Activity Feed Section**:
+- See every action as it happens
+- Status updates like "Analyzing 150 research sources..."
+- Stage transitions like "Stage 6/11: Deep Dive (Round 3/7)"
+- Search operations like "Executing additional search: 'Python async web scraping'"
+
+**Conversations Section**:
+- Read full LLM discussion history
+- Understand the reasoning and analysis
+- See how the LLMs collaborate and refine ideas
+
+### Typical Workflow Timeline
+
+- **Stages 1-2** (5-10 min): Initial analysis and research planning
+- **Stage 3** (1-2 min): Web searches execute in parallel
+- **Stages 4-5** (10-15 min): Research analysis and insight extraction
+- **Stage 6** (15-20 min): Deep technical dive with additional searches
+- **Stages 7-8** (10-15 min): Compilation and validation
+- **Stages 9-10** (10-20 min): Document generation and refinement
+- **Total**: 50-80 minutes for comprehensive research
+
+### Generated Documents
+
+Documents are saved to the workspace root with timestamped names:
+```
+research_output_YYYYMMDD_HHMMSS_DocumentTitle.md
+```
+
+Typical document types:
+- Technical Architecture Document
+- Implementation Guide
+- Technology Comparison Report
+- Best Practices Guide
+- API Integration Guide
+- Deployment Strategy
+- Testing Strategy
 
 ### API Endpoints
 
 The system provides a REST API for programmatic access:
 
-- `POST /research` - Start a new research session
-- `POST /conversation/next` - Execute next conversation round
-- `POST /plan/generate` - Generate development plan
-- `GET /plans` - List all development plans
-- `GET /plans/{filename}` - Get specific plan
-- `GET /plans/{filename}/export` - Export plan as Markdown
+- `POST /start_research` - Start a new research session (body: `{"user_prompt": "your prompt"}`)
+- `GET /status/<session_id>` - Get current status and metrics for a research session
+- `GET /conversations/<session_id>` - Get all LLM conversation messages
+- `GET /download/<filename>` - Download a generated markdown document
 
-### Example Workflow
+### Programmatic Usage
 
 ```javascript
 // 1. Start research session
-const response = await fetch('/research', {
+const response = await fetch('/start_research', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({prompt: 'Build a task management app'})
+    body: JSON.stringify({user_prompt: 'Build a real-time collaboration system'})
 });
+const data = await response.json();
+const sessionId = data.session_id;
 
-// 2. Execute conversation rounds
-for (let i = 0; i < 4; i++) {
-    await fetch('/conversation/next', {method: 'POST'});
-}
+// 2. Poll for status updates
+const statusInterval = setInterval(async () => {
+    const status = await fetch(`/status/${sessionId}`).then(r => r.json());
+    console.log('Stage:', status.current_stage);
+    console.log('Rounds:', status.total_rounds);
+    console.log('Sources:', status.research_sources);
+    
+    if (status.current_stage === 'COMPLETED') {
+        clearInterval(statusInterval);
+        console.log('Documents:', status.documents);
+    }
+}, 2000);
 
-// 3. Generate development plan
-const plan = await fetch('/plan/generate', {method: 'POST'});
+// 3. Monitor LLM conversations
+const convInterval = setInterval(async () => {
+    const convs = await fetch(`/conversations/${sessionId}`).then(r => r.json());
+    console.log('DeepSeek messages:', convs.deepseek?.length || 0);
+    console.log('Ollama messages:', convs.ollama?.length || 0);
+}, 3000);
 ```
 
-## Development Plans
+## 📄 Generated Documents
 
-Development plans are stored in the `DEVPLAN/` directory and include:
+Documents are automatically saved to the workspace root directory with timestamped filenames:
 
-- Project overview and objectives
-- Technology stack with justification
-- System architecture
-- Implementation roadmap
-- Resource requirements
-- Risk assessment
-- Research metrics
-
-### Plan Format
-
-```json
-{
-  "project_name": "Generated from prompt",
-  "user_prompt": "Original user input",
-  "development_plan": "Detailed plan content",
-  "feasibility_assessment": {
-    "feasibility_score": 0.85,
-    "technical_feedback": "...",
-    "risks_identified": ["..."],
-    "recommendations": ["..."]
-  },
-  "research_metrics": {
-    "total_searches": 15,
-    "key_insights": 8,
-    "conversation_rounds": 4,
-    "context_maturity": 0.92,
-    "quality_gates_passed": ["initial_research", "llm_consensus", ...]
-  }
-}
+### File Naming Convention
+```
+research_output_YYYYMMDD_HHMMSS_DocumentTitle.md
 ```
 
-## Quality Management
+Example:
+```
+research_output_20250115_143022_TechnicalArchitectureDocument.md
+research_output_20250115_143022_ImplementationGuide.md
+research_output_20250115_143022_TechnologyComparisonReport.md
+```
 
-The system implements comprehensive quality management:
+### Document Quality
 
-### Quality Gates
-1. **Initial Research Completion** - Comprehensive baseline research
-2. **LLM Consensus on Architecture** - Technical approach validation
-3. **Implementation Feasibility** - Technical viability confirmation
-4. **Research Validation** - Key decisions backed by research
-5. **Final Plan Quality** - Plan meets all quality criteria
+Each document is:
+- ✅ **Reviewed by both LLMs**: Ollama critiques, DeepSeek revises
+- ✅ **Citation-backed**: Claims supported by research sources
+- ✅ **Comprehensive**: Typically 2000-5000 words per document
+- ✅ **Properly structured**: Clear sections, headings, code examples
+- ✅ **Actionable**: Practical guidance, not just theory
 
-### Context Evolution
-- **Round 1**: Foundation building with initial research
-- **Round 2**: Refinement and gap identification
-- **Round 3**: Targeted research integration
-- **Round 4**: Consensus building and finalization
+### Document Types by Research Topic
 
-## Troubleshooting
+The system intelligently generates relevant document types:
+
+**Web Development Projects**:
+- Frontend Architecture Document
+- Backend API Design
+- Database Schema Guide
+- Deployment Strategy
+
+**Machine Learning Projects**:
+- Model Selection Report
+- Data Pipeline Architecture
+- Training Strategy Guide
+- Inference Optimization
+
+**System Design Projects**:
+- Technical Architecture
+- Scalability Analysis
+- Technology Stack Comparison
+- Implementation Roadmap
+
+## 🔧 Technical Details
+
+### Token Management
+
+**DeepSeek (128K context)**:
+- Stage 1: 8000 tokens max (deep analysis)
+- Stage 2-3: 2000 tokens (focused queries)
+- Stage 4: 8000 tokens (analyze 100-200 sources)
+- Stage 5-6: 4000 tokens (detailed discussion)
+- Stage 7: 8000 tokens (master compilation)
+- Stage 9: 8000 tokens per document (generation)
+
+**Ollama (32K context)**:
+- All stages: 2000 tokens (critical review and validation)
+
+### Research Capabilities
+
+**Search Volume**:
+- Initial research: 12-18 queries executed in parallel
+- Deep dive: 2-8 additional targeted searches
+- Total: 100-200 source documents analyzed
+
+**Source Processing**:
+- Each search returns ~8-10 results
+- DeepSeek analyzes full context of all sources simultaneously
+- Citations preserved for document generation
+
+### Performance Characteristics
+
+**Resource Usage**:
+- Memory: ~500MB for Flask app + LLM client overhead
+- Network: 2-5MB total API calls per research session
+- Storage: 50-500KB per generated document
+
+**API Rate Limits**:
+- DeepSeek: Typically 60 requests/minute (enough for workflow)
+- Serper: 2500 searches/month on free tier
+- Ollama: No rate limits (local)
+
+## ⚠️ Troubleshooting
 
 ### Common Issues
 
-1. **Ollama Connection Failed**
-   - Ensure Ollama service is running: `ollama serve`
-   - Verify model is available: `ollama list`
-   - Check OLLAMA_BASE_URL in configuration
+**1. "Workflow seems stuck at a stage"**
+- ✅ Check the **Activity Feed** - it shows every action in real-time
+- ✅ Stage 4, 6, 7, 9 can take 10-20 minutes (large context processing)
+- ✅ If activity feed shows no updates for 5+ minutes, check logs
 
-2. **API Key Errors**
-   - Verify DeepSeek and Serper API keys in .env file
-   - Check API key permissions and quotas
+**2. "Ollama Connection Failed"**
+```bash
+# Ensure Ollama service is running
+ollama serve
 
-3. **File Permission Issues**
-   - Ensure write permissions for DEVPLAN directory
-   - Check disk space availability
+# Verify model is available
+ollama list | grep qwen3-coder
 
-4. **Web Interface Not Loading**
-   - Verify Flask application is running on port 5000
-   - Check firewall settings
+# Check Ollama is accessible
+curl http://localhost:11434/api/version
+```
 
-### Logs
+**3. "DeepSeek API Errors"**
+- Verify API key in `.env` file
+- Check API quota/billing status at DeepSeek dashboard
+- Ensure `DEEPSEEK_BASE_URL=https://api.deepseek.com/v1`
 
-Application logs are written to `ai_research_system.log` in the project root directory.
+**4. "Serper API Errors"**
+- Verify API key in `.env` file
+- Check remaining search quota at serper.dev
+- Free tier: 2500 searches/month
 
-## Contributing
+**5. "Research produces generic documents"**
+- ✅ Make your prompt more specific and technical
+- ✅ Include technology names, constraints, requirements
+- ❌ Avoid vague prompts like "build an app"
 
-This system is designed to be extensible. Key extension points:
+**6. "Web Interface Not Loading"**
+```bash
+# Check Flask is running
+ps aux | grep python | grep run.py
 
-- **New LLM Integrations**: Add clients in `core/` directory
-- **Additional Research Sources**: Extend `SerperClient` class
-- **Custom Plan Formats**: Modify `FileManager` class
-- **Quality Metrics**: Extend quality assessment in `ConversationOrchestrator`
+# Verify port 5000 is available
+netstat -an | grep 5000
 
-## License
+# Check firewall allows localhost:5000
+```
+
+**7. "Documents Not Saving"**
+- Check write permissions in workspace directory
+- Ensure sufficient disk space (need ~10MB free)
+- Verify no file locks on existing documents
+
+### Debug Mode
+
+To enable detailed logging, modify `config/settings.py`:
+```python
+LOG_LEVEL = 'DEBUG'
+```
+
+Then monitor logs in real-time:
+```bash
+# Windows PowerShell
+Get-Content ai_research_system.log -Wait -Tail 50
+
+# View full log
+cat ai_research_system.log
+```
+
+### Getting Help
+
+If issues persist:
+1. Check the **Activity Feed** for error messages
+2. Review `ai_research_system.log` for detailed error traces
+3. Verify all API keys are valid and have quota remaining
+4. Ensure Ollama is running with `qwen3-coder:latest` available
+
+## 🚀 Performance Tips
+
+### Faster Research Sessions
+
+1. **Use specific prompts**: More focused research = fewer rounds
+2. **Preload Ollama model**: Run `ollama run qwen3-coder:latest` before starting
+3. **Stable internet**: Research phase downloads 100-200 web pages
+4. **Close activity feed**: Reduces browser memory usage during long sessions
+
+### Cost Optimization
+
+**DeepSeek API**:
+- Typical session: 150K-300K input tokens, 20K-40K output tokens
+- Cost per session: ~$0.10-0.25 USD (varies by pricing)
+
+**Serper API**:
+- Typical session: 15-25 searches
+- Free tier: 2500 searches/month = ~100-150 research sessions
+
+## 🛠️ Extending the System
+
+Key extension points for developers:
+
+**Add New LLM Providers**:
+1. Create client in `core/` (e.g., `anthropic_client.py`)
+2. Implement `generate()` method matching interface
+3. Update `conversation_orchestrator.py` to use new client
+
+**Modify Workflow Stages**:
+1. Edit `core/models.py` - add new `ConversationStage` enum value
+2. Update `core/conversation_orchestrator.py` - add stage logic
+3. Update `app/templates/index.html` - add stage to pipeline display
+
+**Custom Document Types**:
+1. Modify Stage 9 in `conversation_orchestrator.py`
+2. Update document type instructions in DeepSeek prompt
+3. Adjust document approval logic in Stage 10
+
+**Additional Research Sources**:
+1. Extend `core/serper_client.py` with new methods
+2. Add API configuration to `config/settings.py`
+3. Integrate in Stage 3 or Stage 6 of workflow
+
+## 📝 Project Structure
+
+```
+AgentChat/
+├── app/
+│   ├── routes.py           # Flask routes, session management
+│   ├── static/js/app.js    # Frontend JavaScript
+│   └── templates/index.html # Web interface
+├── core/
+│   ├── conversation_orchestrator.py  # 11-stage workflow logic
+│   ├── deepseek_client.py           # DeepSeek API integration
+│   ├── ollama_client.py             # Ollama local integration
+│   ├── serper_client.py             # Web search integration
+│   └── models.py                    # Data models and enums
+├── config/
+│   └── settings.py         # Configuration management
+├── utils/
+│   └── file_manager.py     # Document saving utilities
+├── requirements.txt        # Python dependencies
+├── run.py                  # Application entry point
+└── .env                    # API keys and configuration
+```
+
+## 📜 License
 
 This project is for educational and research purposes.

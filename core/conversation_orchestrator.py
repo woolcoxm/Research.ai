@@ -2,6 +2,8 @@ import logging
 import json
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+import concurrent.futures
+from threading import Lock
 
 from config.settings import Config
 from core.models import (
@@ -286,8 +288,19 @@ Return ONLY a JSON array like: ["query 1", "query 2", ...]"""
     
     # ==================== STAGE 3: RESEARCH ====================
     
+    def _execute_single_search(self, query: str, index: int, total: int) -> tuple:
+        """Execute a single search query (for parallel execution)"""
+        self._update_status("System", f"Stage 3/11: Searching {index}/{total}", query[:60] + "...")
+        try:
+            search_results = self.serper_client.search(query)
+            logger.info(f"Query '{query[:50]}...' returned {len(search_results)} results")
+            return (True, search_results)
+        except Exception as e:
+            logger.error(f"Search failed for '{query}': {e}")
+            return (False, [])
+    
     def _stage3_research(self, context: ResearchContext) -> ResearchContext:
-        """Perform web searches on identified topics"""
+        """Perform web searches on identified topics (PARALLELIZED)"""
         queries = context.metadata.get('research_queries', [])
         
         if not queries:
@@ -295,24 +308,35 @@ Return ONLY a JSON array like: ["query 1", "query 2", ...]"""
             context.current_stage = ConversationStage.ANALYZE_RESEARCH
             return context
         
-        self._update_status("System", f"Stage 3/11: Executing {len(queries)} research queries", "Gathering comprehensive information")
-        logger.info(f"Stage 3: Research - Executing {len(queries)} queries")
+        self._update_status("System", f"Stage 3/11: Executing {len(queries)} research queries", "Gathering comprehensive information (parallel)")
+        logger.info(f"Stage 3: Research - Executing {len(queries)} queries in parallel")
         
+        # Execute searches in parallel (max 5 concurrent searches)
         all_results = []
-        for i, query in enumerate(queries, 1):
-            self._update_status("System", f"Stage 3/11: Searching {i}/{len(queries)}", query[:60] + "...")
-            try:
-                search_results = self.serper_client.search(query)
-                all_results.extend(search_results)
-                logger.info(f"Query '{query[:50]}...' returned {len(search_results)} results")
-            except Exception as e:
-                logger.error(f"Search failed for '{query}': {e}")
+        max_workers = min(5, len(queries))
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all search tasks
+            future_to_query = {
+                executor.submit(self._execute_single_search, query, i, len(queries)): query 
+                for i, query in enumerate(queries, 1)
+            }
+            
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_query):
+                query = future_to_query[future]
+                try:
+                    success, search_results = future.result()
+                    if success:
+                        all_results.extend(search_results)
+                except Exception as e:
+                    logger.error(f"Search task failed for '{query}': {e}")
         
         # Add all results to context
         for result in all_results:
             context.add_search_result(result, is_targeted=False)
         
-        logger.info(f"Research complete: {len(all_results)} total results")
+        logger.info(f"Research complete: {len(all_results)} total results from {len(queries)} parallel searches")
         context.metadata['initial_research_complete'] = True
         
         # Move to analysis
@@ -321,68 +345,136 @@ Return ONLY a JSON array like: ["query 1", "query 2", ...]"""
     
     # ==================== STAGE 4: ANALYZE RESEARCH ====================
     
-    def _stage4_analyze_research(self, context: ResearchContext) -> ResearchContext:
-        """DeepSeek analyzes ALL research results using full context"""
-        self._update_status("DeepSeek", "Stage 4/11: Analyzing all research results", "Processing 100-200 sources with full context")
-        logger.info("Stage 4: Analyze Research - DeepSeek processing all results")
+    def _analyze_research_chunk(self, chunk_data: str, chunk_num: int, total_chunks: int, user_prompt: str) -> str:
+        """Analyze a chunk of research results (for parallel execution)"""
+        self._update_status(
+            "DeepSeek", 
+            f"Stage 4/11: Analyzing chunk {chunk_num}/{total_chunks}",
+            f"Processing research sources in parallel..."
+        )
         
-        # Build comprehensive research data for DeepSeek
-        all_results = context.initial_searches + context.targeted_searches
-        research_data = []
-        
-        for i, result in enumerate(all_results[:150], 1):  # Cap at 150 to stay within context
-            research_data.append(f"""
-### Source {i}: {result.title}
-URL: {result.url}
-Content: {result.snippet}
-""")
-        
-        research_text = "\n".join(research_data)
-        
-        analysis_prompt = f"""Analyze ALL of these research results comprehensively:
+        analysis_prompt = f"""Analyze these research results for the project:
 
-{research_text}
+{chunk_data}
+
+Project Context: {user_prompt}
+
+Extract:
+1. Key technical insights and findings
+2. Recommended technologies and approaches
+3. Best practices discovered
+4. Common pitfalls to avoid
+5. Important patterns or themes
+
+Be concise but thorough. Focus on actionable insights."""
+
+        try:
+            message = self.deepseek_client.generate_response(analysis_prompt, max_tokens=4000)
+            logger.info(f"Chunk {chunk_num}/{total_chunks} analyzed successfully")
+            return message.content
+        except Exception as e:
+            logger.error(f"Analysis failed for chunk {chunk_num}: {e}")
+            return f"Error analyzing chunk {chunk_num}: {str(e)}"
+    
+    def _stage4_analyze_research(self, context: ResearchContext) -> ResearchContext:
+        """DeepSeek analyzes research results using PARALLEL chunked processing"""
+        logger.info("Stage 4: Analyze Research - DeepSeek processing with parallel chunks")
+        
+        # Build comprehensive research data
+        all_results = context.initial_searches + context.targeted_searches
+        total_sources = min(len(all_results), 150)
+        
+        # Build research data FAST - use list comprehension instead of loop
+        logger.info(f"Building context from {total_sources} sources...")
+        research_data = [
+            f"### Source {i}: {result.title}\nURL: {result.link}\nContent: {result.snippet}\n"
+            for i, result in enumerate(all_results[:150], 1)
+        ]
+        
+        # Split into chunks for parallel processing (30 sources per chunk)
+        chunk_size = 30
+        chunks = [
+            "\n".join(research_data[i:i + chunk_size])
+            for i in range(0, len(research_data), chunk_size)
+        ]
+        
+        total_chunks = len(chunks)
+        logger.info(f"Split {total_sources} sources into {total_chunks} chunks for parallel analysis")
+        
+        self._update_status(
+            "DeepSeek", 
+            f"Stage 4/11: Analyzing {total_sources} sources in {total_chunks} parallel chunks",
+            "Processing multiple chunks simultaneously for faster analysis..."
+        )
+        
+        # Process chunks in parallel (max 3 concurrent API calls)
+        chunk_analyses = []
+        max_workers = min(3, total_chunks)
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all analysis tasks
+            future_to_chunk = {
+                executor.submit(self._analyze_research_chunk, chunk, i, total_chunks, context.user_prompt): i 
+                for i, chunk in enumerate(chunks, 1)
+            }
+            
+            # Collect results as they complete
+            results_dict = {}
+            for future in concurrent.futures.as_completed(future_to_chunk):
+                chunk_num = future_to_chunk[future]
+                try:
+                    analysis = future.result()
+                    results_dict[chunk_num] = analysis
+                    logger.info(f"Collected analysis for chunk {chunk_num}/{total_chunks}")
+                except Exception as e:
+                    logger.error(f"Failed to get result for chunk {chunk_num}: {e}")
+                    results_dict[chunk_num] = f"Error in chunk {chunk_num}"
+            
+            # Combine results in order
+            for i in range(1, total_chunks + 1):
+                if i in results_dict:
+                    chunk_analyses.append(results_dict[i])
+        
+        # Synthesize all chunk analyses into final analysis
+        self._update_status(
+            "DeepSeek", 
+            f"Stage 4/11: Synthesizing {total_chunks} chunk analyses",
+            "Combining insights from all parallel analyses..."
+        )
+        
+        combined_analysis = "\n\n---\n\n".join(chunk_analyses)
+        
+        synthesis_prompt = f"""Synthesize these {total_chunks} parallel analyses into one comprehensive analysis:
+
+{combined_analysis[:50000]}
 
 Project Context: {context.user_prompt}
 
-Provide a thorough analysis covering:
+Create a unified analysis covering:
+1. **Key Insights** (15-20 most important points)
+2. **Technology Analysis** (recommended approaches and best practices)
+3. **Architecture Patterns** (system design patterns found)
+4. **Implementation Details** (technical requirements and code patterns)
+5. **Knowledge Gaps** (what needs deeper investigation)
 
-1. **Key Insights** (15-20 points)
-   - Extract the most important technical findings
-   - Identify patterns and common themes
-   - Note any conflicting information
+Remove duplicates and synthesize common themes."""
 
-2. **Technology Analysis**
-   - Recommended approaches and technologies
-   - Best practices discovered
-   - Common pitfalls to avoid
-
-3. **Architecture Patterns**
-   - System design patterns found
-   - Component relationships
-   - Scalability considerations
-
-4. **Implementation Details**
-   - Specific technical requirements
-   - Code patterns and examples mentioned
-   - Integration approaches
-
-5. **Knowledge Gaps**
-   - What information is still unclear?
-   - What needs deeper investigation?
-   - What conflicting information needs resolution?
-
-Be comprehensive - you have access to all research results. Use specific examples and citations."""
-
-        message = self.deepseek_client.generate_response(analysis_prompt, max_tokens=8000)
-        context.add_message(message)
+        final_message = self.deepseek_client.generate_response(synthesis_prompt, max_tokens=8000)
+        context.add_message(final_message)
         
-        # Extract insights from DeepSeek's analysis
-        insights = self._extract_insights_from_analysis(message.content)
+        # Update status to show analysis is complete
+        self._update_status(
+            "DeepSeek", 
+            f"Stage 4/11: Analysis complete",
+            f"Analyzed {total_sources} sources using {total_chunks} parallel chunks"
+        )
+        
+        # Extract insights from final synthesis
+        insights = self._extract_insights_from_analysis(final_message.content)
         context.key_insights.extend(insights)
         
-        logger.info(f"Research analysis complete: {len(insights)} insights extracted")
-        context.metadata['research_analysis'] = message.content
+        logger.info(f"Research analysis complete: {len(insights)} insights extracted from {total_sources} sources using parallel processing")
+        context.metadata['research_analysis'] = final_message.content
         
         # Move to findings discussion
         context.current_stage = ConversationStage.DISCUSS_FINDINGS
@@ -500,13 +592,32 @@ Provide detailed clarification using the comprehensive research data available."
             self._update_status("DeepSeek", "Stage 6/11: Deep dive analysis", f"Round {round_num + 1}/{max_rounds}")
             logger.info("Stage 6: DeepSeek deep dive")
             
-            dive_prompt = f"""Perform a deep analysis of the key points for this project:
+            # Get comprehensive research analysis from Stage 4
+            research_analysis = context.metadata.get('research_analysis', '')
+            # Get recent conversation context (last 10 messages)
+            recent_messages = context.messages[-10:] if len(context.messages) > 10 else context.messages
+            conversation_summary = "\n\n".join([f"{msg.llm_type.value}: {msg.content[:500]}..." for msg in recent_messages])
+            
+            dive_prompt = f"""Perform a deep technical analysis based on our research findings.
 
-{context.user_prompt}
+PROJECT: {context.user_prompt}
 
-Identify any remaining gaps or questions. If you need more information, state: "SEARCH_NEEDED: [query]"
+RESEARCH ANALYSIS:
+{research_analysis[:15000]}
 
-Focus on technical depth and implementation details."""
+RECENT DISCUSSION:
+{conversation_summary[:5000]}
+
+Provide a deep dive focusing on:
+1. Technical implementation details
+2. Architecture decisions and trade-offs
+3. Potential challenges and solutions
+4. Best practices and patterns
+5. Any gaps requiring more research
+
+If you need additional information on any topic, state: "SEARCH_NEEDED: [specific query]"
+
+Be thorough and technical."""
 
             message = self.deepseek_client.generate_response(dive_prompt, max_tokens=3000)
             context.add_message(message)
@@ -522,11 +633,26 @@ Focus on technical depth and implementation details."""
             logger.info("Stage 6: Ollama review")
             
             latest = self._get_latest_message_content(context, LLMType.DEEPSEEK)
-            review_prompt = f"""Review this deep analysis:
+            research_analysis = context.metadata.get('research_analysis', '')
+            
+            review_prompt = f"""Review and critique this deep technical analysis:
 
-{latest[:8000]}
+LATEST ANALYSIS:
+{latest[:10000]}
 
-Validate the technical approach and identify any missing pieces. If more research is needed, state: "SEARCH_NEEDED: [query]"."""
+RESEARCH CONTEXT:
+{research_analysis[:8000]}
+
+Provide critical feedback:
+1. What technical details are missing or unclear?
+2. Are there better approaches or alternatives?
+3. What risks or challenges weren't addressed?
+4. What specific implementation details need clarification?
+5. Should we investigate any topics deeper?
+
+If more research is needed on specific topics, state: "SEARCH_NEEDED: [specific query]"
+
+Be thorough and challenge assumptions."""
 
             message = self.ollama_client.generate_response(review_prompt)
             context.add_message(message)

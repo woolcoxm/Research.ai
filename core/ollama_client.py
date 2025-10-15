@@ -14,7 +14,7 @@ class OllamaClient:
     def __init__(self):
         self.base_url = Config.OLLAMA_BASE_URL
         self.model = Config.OLLAMA_MODEL
-        self.timeout = Config.REQUEST_TIMEOUT
+        self.timeout = Config.OLLAMA_TIMEOUT  # Use dedicated Ollama timeout (5 minutes default)
         
         # Verify Ollama is running and model is available
         self._verify_connection()

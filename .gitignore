@@ -95,3 +95,5 @@ htmlcov/
 *.temp
 temp/
 tmp/
+
+saved_sessions/

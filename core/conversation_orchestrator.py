@@ -221,29 +221,26 @@ For each point, provide 2-3 sentences of analysis. Be thorough and identify 8-12
         
         logger.info(f"Stage 2: Round {round_num}/{max_rounds}")
         
-        if round_num >= max_rounds:
-            logger.info(f"Breakdown discussion complete after {round_num} rounds")
-            context.current_stage = ConversationStage.RESEARCH
-            return context
-        
+        # Don't exit early - we need to extract queries from the final round
         context.metadata['breakdown_discussion_round'] = round_num + 1
         logger.info(f"Stage 2: Incremented to round {round_num + 1}")
         
         if round_num == 0:
-            # Ollama reviews breakdown
-            self._update_status("Ollama", "Stage 2/11: Reviewing breakdown", f"Discussion round {round_num + 1}/{max_rounds}")
+            # Ollama reviews breakdown and suggests research topics
+            self._update_status("Ollama", "Stage 2/11: Reviewing & suggesting research topics", f"Discussion round {round_num + 1}/{max_rounds}")
             logger.info("Stage 2: Ollama reviewing breakdown")
             
             breakdown = context.metadata.get('initial_breakdown', '')
-            review_prompt = f"""Review this project breakdown and provide critical analysis:
+            review_prompt = f"""Review this project breakdown and provide:
 
 {breakdown[:8000]}
 
-Provide:
-1. What's missing or unclear?
-2. What assumptions need validation?
-3. What additional considerations are needed?
-4. Suggest 5-7 specific research topics we should investigate."""
+1. Critical analysis: What's missing or unclear?
+2. Key assumptions that need validation
+3. Important considerations
+4. **LIST OF 10-15 SPECIFIC RESEARCH QUERIES** to investigate (as numbered list)
+
+Format your research queries clearly so they can be extracted."""
 
             message = self.ollama_client.generate_response(review_prompt)
             context.add_message(message)
@@ -252,51 +249,8 @@ Provide:
             self._update_status("Ollama", "Stage 2/11: Breakdown Review", message.content)
             logger.info(f"Ollama review complete: {len(message.content)} chars")
             
-        elif round_num == 1:
-            # DeepSeek refines based on feedback
-            self._update_status("DeepSeek", "Stage 2/11: Refining breakdown", f"Discussion round {round_num + 1}/{max_rounds}")
-            logger.info("Stage 2: DeepSeek refining breakdown")
-            
-            ollama_feedback = self._get_latest_message_content(context, LLMType.OLLAMA)
-            refine_prompt = f"""Based on this feedback, refine the project breakdown:
-
-{ollama_feedback[:8000]}
-
-Provide an updated breakdown addressing the concerns raised and expanding on unclear areas."""
-
-            message = self.deepseek_client.generate_response(refine_prompt, max_tokens=4000)
-            context.add_message(message)
-            
-            # Show full message in details field
-            self._update_status("DeepSeek", "Stage 2/11: Refining Breakdown", message.content)
-            logger.info(f"DeepSeek refinement complete: {len(message.content)} chars")
-            
-        elif round_num == 2:
-            # Ollama identifies specific research topics
-            self._update_status("Ollama", "Stage 2/11: Identifying research topics", f"Discussion round {round_num + 1}/{max_rounds}")
-            logger.info("Stage 2: Ollama identifying research topics")
-            
-            latest_breakdown = self._get_latest_message_content(context, LLMType.DEEPSEEK)
-            research_prompt = f"""Based on this refined breakdown:
-
-{latest_breakdown[:8000]}
-
-Create a list of 10-15 specific research queries we should investigate. Format:
-1. [Query about technology/approach]
-2. [Query about implementation details]
-...
-
-Focus on actionable search terms that will yield useful technical information."""
-
-            message = self.ollama_client.generate_response(research_prompt)
-            context.add_message(message)
-            
-            # Show full message in details field
-            self._update_status("Ollama", "Stage 2/11: Research Topics", message.content)
-            logger.info(f"Ollama research topics complete: {len(message.content)} chars")
-            
         else:
-            # DeepSeek finalizes research query list
+            # Round 1: DeepSeek finalizes research query list
             self._update_status("DeepSeek", "Stage 2/11: Finalizing research plan", f"Discussion round {round_num + 1}/{max_rounds}")
             logger.info("Stage 2: DeepSeek finalizing research queries")
             
@@ -909,7 +863,7 @@ Is this comprehensive and complete? Approve or identify remaining gaps."""
         approved = context.metadata.get('approved_documents', [])
         current_index = context.metadata.get('current_doc_index', 0)
         round_num = context.metadata.get('doc_refinement_round', 0)
-        max_rounds_per_doc = 3  # REDUCED from 6 to 3 for efficiency
+        max_rounds_per_doc = 5  # INCREASED from 3 to 5 for more comprehensive refinement
         
         # Check if all documents approved
         if current_index >= len(pending):
@@ -938,18 +892,28 @@ Is this comprehensive and complete? Approve or identify remaining gaps."""
             logger.info(f"Stage 10: Ollama reviewing '{doc_title}'")
             
             doc_content = current_doc.get('content', '')
-            review_prompt = f"""Review this document for quality and completeness:
+            review_prompt = f"""Review this implementation guide for comprehensiveness and detail:
 
 DOCUMENT: {doc_title}
+ROUND: {round_num + 1}/{max_rounds_per_doc}
 
 {doc_content[:8000]}
 
-Provide:
-1. Overall quality assessment
-2. Specific improvements needed
-3. Missing sections or details
-4. If document is ready, state: "APPROVED"
-Otherwise, provide detailed feedback."""
+EVALUATION CRITERIA:
+1. **Code Examples**: Are there 500+ lines of complete, runnable code examples?
+2. **Configuration Files**: Are all necessary config files included in full?
+3. **Step-by-Step Instructions**: Can a developer follow this to build the system?
+4. **Implementation Details**: Are algorithms, data structures, and patterns explained with code?
+5. **Troubleshooting**: Are common issues addressed with solutions?
+
+FEEDBACK REQUIRED:
+- List 3-5 specific sections that need MORE code examples
+- List 2-3 configuration files that are missing or incomplete
+- List 2-3 areas that need more detailed explanations
+- Suggest specific code snippets or examples to add
+
+If document is COMPREHENSIVE (5000+ words, 500+ lines of code, all configs included), state: "APPROVED"
+Otherwise, provide specific expansion requests."""
 
             message = self.ollama_client.generate_response(review_prompt)
             context.add_message(message)
@@ -971,18 +935,29 @@ Otherwise, provide detailed feedback."""
                 logger.info(f"Stage 10: DeepSeek revising '{doc_title}'")
                 
                 feedback = self._get_latest_message_content(context, LLMType.OLLAMA)
-                revise_prompt = f"""Revise this document based on feedback:
+                revise_prompt = f"""Revise this implementation guide based on feedback. EXPAND with MORE implementation details:
 
 DOCUMENT: {doc_title}
-ORIGINAL:
+ROUND: {round_num + 1}/{max_rounds_per_doc}
+
+ORIGINAL CONTENT:
 {current_doc.get('content', '')[:6000]}
 
-FEEDBACK:
+EXPANSION FEEDBACK:
 {feedback[:2000]}
 
-Provide the complete revised document."""
+REVISION REQUIREMENTS:
+1. **Add MORE code examples** - Include complete, runnable implementations (200-500 lines each)
+2. **Add ALL configuration files** - Include complete file contents, not just descriptions
+3. **Add step-by-step commands** - Include every command a developer needs to run
+4. **Expand explanations** - Add WHY and HOW for each decision, with examples
+5. **Add troubleshooting** - Include 10-15 common issues with complete solutions
 
-                message = self.deepseek_client.generate_response(revise_prompt, max_tokens=8000)
+TARGET: 5000+ words, 500-1000+ lines of code total
+
+Provide the COMPLETE EXPANDED document with all additions incorporated."""
+
+                message = self.deepseek_client.generate_response(revise_prompt, max_tokens=20000)
                 context.add_message(message)
                 self._update_status("DeepSeek", f"Stage 10/11: Revising '{doc_title}'", message.content)
                 
@@ -997,11 +972,23 @@ Provide the complete revised document."""
                 logger.info(f"Stage 10: Ollama re-reviewing '{doc_title}'")
                 
                 revised = self._get_latest_message_content(context, LLMType.DEEPSEEK)
-                review_prompt = f"""Review the revised document:
+                review_prompt = f"""Review the REVISED implementation guide for COMPREHENSIVENESS:
 
+DOCUMENT: {doc_title}
+ROUND: {round_num + 1}/{max_rounds_per_doc}
+
+REVISED CONTENT:
 {revised[:8000]}
 
-Is this now ready? State "APPROVED" if yes, or provide additional feedback."""
+CHECK FOR:
+1. ✓ At least 500 lines of complete, runnable code examples
+2. ✓ All configuration files included in full
+3. ✓ Step-by-step commands for setup and deployment
+4. ✓ Implementation details (algorithms, patterns, data structures)
+5. ✓ Troubleshooting section with 10+ issues and solutions
+
+If ALL criteria met and document is comprehensive (5000+ words), state "APPROVED"
+Otherwise, list what's STILL missing and needs to be added."""
 
                 message = self.ollama_client.generate_response(review_prompt)
                 context.add_message(message)

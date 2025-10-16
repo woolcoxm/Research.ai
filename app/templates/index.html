@@ -1622,9 +1622,31 @@
             }, 10000);
         }
 
-        function downloadDocuments() {
-            if (currentSessionId) {
-                window.location.href = `/session/${currentSessionId}`;
+        async function downloadDocuments() {
+            if (!currentSessionId) {
+                console.error('No current session');
+                return;
+            }
+            
+            try {
+                // First, try to generate files if they don't exist
+                const generateResponse = await fetch(`/api/generate-files/${currentSessionId}`, {
+                    method: 'POST'
+                });
+                
+                if (generateResponse.ok) {
+                    const data = await generateResponse.json();
+                    console.log('Files ready:', data);
+                    
+                    // Now download all files as ZIP
+                    window.location.href = `/api/download-all/${currentSessionId}`;
+                } else {
+                    const error = await generateResponse.json();
+                    alert(`Error generating files: ${error.error || 'Unknown error'}`);
+                }
+            } catch (error) {
+                console.error('Download error:', error);
+                alert(`Failed to download files: ${error.message}`);
             }
         }
 

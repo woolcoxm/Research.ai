@@ -11,7 +11,7 @@ from utils.file_manager import FileManager
 from utils.session_persistence import save_session, load_session, list_saved_sessions, delete_session, load_all_sessions
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)  # Changed to DEBUG for troubleshooting
 logger = logging.getLogger(__name__)
 
 # Initialize Flask app
@@ -717,7 +717,10 @@ def get_conversations(session_id):
         deepseek_counter = 1
         ollama_counter = 1
         
-        for msg in all_messages:
+        for idx, msg in enumerate(all_messages):
+            llm_type = msg.get('llm_type', 'unknown')
+            logger.debug(f"Message {idx}: llm_type='{llm_type}', content_preview='{msg.get('content', '')[:50]}'")
+            
             msg_data = {
                 'content': msg.get('content', ''),
                 'timestamp': msg.get('timestamp', ''),
@@ -725,14 +728,16 @@ def get_conversations(session_id):
                 'preview': msg.get('content', '')[:150] + '...' if len(msg.get('content', '')) > 150 else msg.get('content', '')
             }
             
-            if msg.get('llm_type') == 'deepseek':
+            if llm_type == 'deepseek':
                 msg_data['number'] = deepseek_counter
                 deepseek_messages.append(msg_data)
                 deepseek_counter += 1
-            elif msg.get('llm_type') == 'ollama':
+            elif llm_type == 'ollama':
                 msg_data['number'] = ollama_counter
                 ollama_messages.append(msg_data)
                 ollama_counter += 1
+            else:
+                logger.warning(f"Message {idx} has unknown llm_type: '{llm_type}'")
         
         logger.info(f"Returning {len(deepseek_messages)} DeepSeek and {len(ollama_messages)} Ollama messages")
         
@@ -1083,6 +1088,129 @@ def download_file(filepath):
         
     except Exception as e:
         logger.error(f"Failed to download file {filepath}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/generate-files/<session_id>', methods=['POST'])
+def generate_files_from_session(session_id):
+    """Generate files from session's approved_documents"""
+    try:
+        session_data = global_sessions.get(session_id)
+        
+        if not session_data:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        # Check if files already exist
+        if session_data.get('saved_files') and len(session_data.get('saved_files', {})) > 0:
+            return jsonify({
+                'message': 'Files already exist',
+                'files': session_data['saved_files']
+            })
+        
+        # Load full session to get approved_documents
+        from utils.session_persistence import load_session
+        full_session = load_session(session_id)
+        
+        if not full_session:
+            return jsonify({'error': 'Could not load session data'}), 404
+        
+        context = full_session.get('context')
+        if not context:
+            return jsonify({'error': 'No context found in session'}), 404
+        
+        # Get approved documents from metadata
+        approved_docs = context.get('metadata', {}).get('approved_documents', [])
+        
+        if not approved_docs:
+            return jsonify({'error': 'No documents to generate'}), 400
+        
+        # Create file manager
+        file_manager = FileManager()
+        
+        # Create project directory
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        user_prompt = context.get('user_prompt', 'Project')[:50]
+        project_name = file_manager._sanitize_filename(user_prompt)
+        project_dir = os.path.join(file_manager.devplan_dir, f"{timestamp}_{project_name}")
+        os.makedirs(project_dir, exist_ok=True)
+        
+        saved_files = {}
+        
+        for idx, doc in enumerate(approved_docs):
+            title = doc.get('title', f'Document_{idx+1}')
+            content = doc.get('content', '')
+            
+            # Save each document as markdown
+            filename = file_manager._sanitize_filename(title) + '.md'
+            filepath = os.path.join(project_dir, filename)
+            
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(f"# {title}\n\n{content}")
+            
+            saved_files[title] = filepath
+            logger.info(f"Generated file: {title} at {filepath}")
+        
+        # Update global session with saved files
+        global_sessions[session_id]['saved_files'] = saved_files
+        
+        logger.info(f"Generated {len(saved_files)} files for session {session_id}")
+        
+        return jsonify({
+            'message': f'Successfully generated {len(saved_files)} files',
+            'files': saved_files,
+            'project_dir': project_dir
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to generate files for session {session_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/download-all/<session_id>', methods=['GET'])
+def download_all_files(session_id):
+    """Download all files for a session as a ZIP"""
+    try:
+        import zipfile
+        import io
+        
+        session_data = global_sessions.get(session_id)
+        
+        if not session_data:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        saved_files = session_data.get('saved_files', {})
+        
+        if not saved_files:
+            return jsonify({'error': 'No files to download'}), 404
+        
+        # Create ZIP file in memory
+        memory_file = io.BytesIO()
+        
+        with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for title, filepath in saved_files.items():
+                if os.path.exists(filepath):
+                    # Add file to ZIP with just the filename (no full path)
+                    arcname = os.path.basename(filepath)
+                    zf.write(filepath, arcname)
+        
+        memory_file.seek(0)
+        
+        # Generate download name
+        user_prompt = session_data.get('user_prompt', 'project')[:30]
+        safe_name = ''.join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in user_prompt)
+        download_name = f"{safe_name}_documents.zip"
+        
+        logger.info(f"Downloading ZIP with {len(saved_files)} files for session {session_id}")
+        
+        return send_file(
+            memory_file,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=download_name
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to create ZIP for session {session_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 

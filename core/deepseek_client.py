@@ -81,21 +81,23 @@ class DeepSeekClient:
             messages.append({
                 "role": "system",
                 "content": (
-                    f"You are an expert AI researcher and senior software architect specializing in design documentation and architectural planning. Use the following research context to inform your analysis:\n\n{context}\n\n"
-                    "When answering, do the following:\n"
+                    f"You are an expert AI researcher, senior software architect, and implementation specialist. Use the following research context to inform your analysis:\n\n{context}\n\n"
+                    "When answering, provide COMPREHENSIVE IMPLEMENTATION GUIDANCE:\n"
                     "1) Reference specific search results or key insights provided in context and cite sources in [Source: URL] format.\n"
-                    "2) PRIORITIZE architectural documentation: system design explanations, textual architecture diagrams, design patterns, and technology justifications.\n"
-                    "3) Include code ONLY as minimal examples to illustrate key concepts (prefer pseudocode or small snippets).\n"
-                    "4) When making recommendations, explain trade-offs, design decisions, and WHY certain approaches are chosen.\n"
-                    "5) If the context lacks information needed for a thorough answer, explicitly say what additional searches or details are required.\n"
-                    "6) Focus on PLANNING documentation - what to build, why, and how components interact - NOT production implementation code.\n"
-                    "Provide long-form architectural and design documentation suitable for engineering teams in the planning phase."
+                    "2) Provide BOTH architecture AND detailed implementation guidance: system design, code examples, configuration files, and setup procedures.\n"
+                    "3) Include DETAILED CODE EXAMPLES with complete implementations - not just pseudocode or snippets. Show actual working code.\n"
+                    "4) When making recommendations, explain trade-offs, design decisions, WHY certain approaches are chosen, AND HOW to implement them.\n"
+                    "5) Include step-by-step implementation procedures, configuration examples, and troubleshooting guidance.\n"
+                    "6) Provide PRODUCTION-READY implementation guidance - what to build, why, how to build it, and how to deploy it.\n"
+                    "7) Include complete file structures, configuration files, dependency lists, and deployment scripts.\n"
+                    "8) Add code comments, error handling examples, and best practices for each implementation.\n"
+                    "Provide comprehensive documentation suitable for developers to take a project from start to finish."
                 )
             })
         else:
             messages.append({
                 "role": "system",
-                "content": "You are an expert AI researcher and software architect specializing in design documentation. Provide detailed architectural analysis, design decisions, and planning documentation. Minimize code - focus on design."
+                "content": "You are an expert AI researcher, software architect, and implementation specialist. Provide detailed architectural analysis, design decisions, AND comprehensive implementation guidance with complete code examples, configurations, and step-by-step procedures."
             })
         
         messages.append({
@@ -282,49 +284,59 @@ Research context: {research_context[:500]}...
         
         documents = []
         
-        # Reduce max tokens per document to avoid timeouts (6000 instead of 8000)
-        doc_max_tokens = 6000
+        # Increase max tokens for comprehensive implementation guides
+        doc_max_tokens = 20000  # Increased from 6000 to allow detailed implementation guidance
         logger.info(f"Generating multiple documents with {doc_max_tokens} max tokens each")
         
         try:
-            # Document 1: System Architecture & Technical Specifications
-            logger.info("Generating Document 1: System Architecture")
-            arch_prompt = f"""Create a COMPREHENSIVE SYSTEM ARCHITECTURE & DESIGN DOCUMENT for: {user_prompt}
+            # Document 1: System Architecture & Implementation Guide
+            logger.info("Generating Document 1: System Architecture & Implementation")
+            arch_prompt = f"""Create a COMPREHENSIVE SYSTEM ARCHITECTURE & IMPLEMENTATION GUIDE for: {user_prompt}
 
 RESEARCH CONTEXT: {research_context}
 TECHNICAL DISCUSSION: {conversation_summary}
 
-# System Architecture & Technical Specifications
+# System Architecture & Implementation Guide
 
 ## 1. SYSTEM OVERVIEW & DESIGN PHILOSOPHY
-- High-level architecture diagram (textual/ASCII description - NO code)
-- Core components and their responsibilities (conceptual design)
-- Data flow and communication patterns (architectural patterns)
-- Integration points and external dependencies
+- High-level architecture diagram (textual/ASCII description)
+- Core components and their responsibilities with implementation approach
+- Data flow and communication patterns with code examples
+- Integration points and external dependencies with configuration examples
+- **Include example project structure with file organization**
 
-## 2. DETAILED ARCHITECTURAL DESIGN
-- Frontend architecture approach (component strategy, state management philosophy)
-- Backend architecture pattern (services design, API structure)
-- Database design strategy (schema concepts, relationship patterns)
-- API design patterns (RESTful/GraphQL approach, authentication strategy)
-- Caching architecture and data flow philosophy
+## 2. DETAILED ARCHITECTURAL IMPLEMENTATION
+- Frontend architecture with complete component examples and state management code
+- Backend architecture with service implementations, API endpoints, and routing code
+- Database implementation with complete schema definitions, migrations, and seed data
+- API implementation with request/response examples, validation code, and error handling
+- Caching implementation with Redis/Memcached configuration and code examples
+- **Include complete configuration files (package.json, requirements.txt, docker-compose.yml)**
 
-## 3. TECHNOLOGY STACK JUSTIFICATION
-- Frontend: Framework choice and WHY (trade-offs, benefits)
-- Backend: Technology selection rationale and alternatives considered
-- Infrastructure: Hosting, scaling, and deployment strategy
-- DevOps: CI/CD approach and tooling philosophy
-- Security: Authentication approach and security architecture
+## 3. TECHNOLOGY STACK WITH SETUP INSTRUCTIONS
+- Frontend: Framework setup, dependencies, and starter code with explanations
+- Backend: Technology installation, project initialization, and configuration files
+- Infrastructure: Docker setup, cloud deployment configurations, and scripts
+- DevOps: CI/CD pipeline configuration files (GitHub Actions, GitLab CI, Jenkins)
+- Security: Authentication implementation with JWT/OAuth code examples
+- **Include step-by-step setup procedures and commands**
 
-## 4. DATA MODELS & SCHEMA DESIGN
-- Conceptual data model and entity relationships
-- Database design patterns and normalization strategy
-- Indexing strategy rationale
-- Data validation approach
-- Schema evolution and migration strategy
+## 4. DATA MODELS & SCHEMA IMPLEMENTATION
+- Complete database schema with CREATE TABLE statements and migration files
+- ORM model definitions (Django, SQLAlchemy, Prisma, etc.) with relationships
+- Indexing implementation with CREATE INDEX statements and query optimization
+- Data validation with Joi/Pydantic/validator code examples
+- Schema migration procedures with example migration files
+- **Include seed data and test data examples**
 
-IMPORTANT: Focus on DESIGN and ARCHITECTURE documentation. Include minimal code (pseudocode/small examples ONLY).
-This is a planning document explaining WHAT and WHY, not a code implementation guide."""
+## 5. CODE ORGANIZATION & FILE STRUCTURE
+- Complete project directory structure with explanations
+- Module/package organization patterns
+- Configuration management (environment variables, config files)
+- Static assets organization (CSS, JS, images)
+- **Include example files for each major component**
+
+IMPORTANT: This is a COMPREHENSIVE IMPLEMENTATION GUIDE. Include detailed code examples, complete configuration files, and step-by-step setup procedures. Developers should be able to follow this document to build the entire system from scratch."""
 
             arch_doc = self.generate_response(arch_prompt, research_context, temperature=0.3, max_tokens=doc_max_tokens)
             documents.append({
@@ -344,51 +356,116 @@ This is a planning document explaining WHAT and WHY, not a code implementation g
             })
 
         try:
-            # Document 2: Implementation Strategy & Development Roadmap
-            logger.info("Generating Document 2: Implementation Guide")
-            impl_prompt = f"""Create a DETAILED IMPLEMENTATION STRATEGY & DEVELOPMENT ROADMAP for: {user_prompt}
+            # Document 2: Step-by-Step Implementation Guide
+            logger.info("Generating Document 2: Step-by-Step Implementation Guide")
+            impl_prompt = f"""Create a DETAILED STEP-BY-STEP IMPLEMENTATION GUIDE for: {user_prompt}
 
 RESEARCH CONTEXT: {research_context}
 TECHNICAL DISCUSSION: {conversation_summary}
 
-# Implementation Strategy & Development Roadmap
+# Step-by-Step Implementation Guide
 
-## 1. DEVELOPMENT PHASES & MILESTONES
-- Phase 1 (Weeks 1-3): Infrastructure setup and foundational architecture
-- Phase 2 (Weeks 4-6): Core functionality and business logic development
-- Phase 3 (Weeks 7-9): User interface and experience implementation
-- Phase 4 (Weeks 10-12): Integration, testing, and optimization
-- Phase 5 (Weeks 13-15): Deployment preparation and documentation
+## 1. ENVIRONMENT SETUP (Day 1)
+### Development Machine Setup
+- **Install required tools**: Node.js/Python/Ruby (include version numbers and installation commands)
+- **IDE/Editor setup**: VS Code extensions, settings.json configuration
+- **Database installation**: PostgreSQL/MySQL/MongoDB setup commands and configuration
+- **Docker setup**: Installation and basic configuration
+- **Include complete commands for each step**
 
-## 2. IMPLEMENTATION APPROACH & METHODOLOGY
-- Development methodology (Agile/Scrum approach)
-- Sprint planning and task breakdown strategy
-- Feature prioritization and MVP definition
-- Risk mitigation and contingency planning
-- Team structure and role definitions
+### Project Initialization
+- **Create project structure**: mkdir commands and folder organization
+- **Initialize package manager**: npm init, pip setup, bundle init with configurations
+- **Set up Git repository**: git init, .gitignore template, initial commit
+- **Configure linting and formatting**: ESLint/Prettier/Black configuration files
+- **Include all configuration file contents**
 
-## 3. DEVELOPMENT ENVIRONMENT SETUP STRATEGY
-- Environment requirements and tooling needs
-- Project structure and organization principles
-- Configuration management approach
-- Version control strategy and branching model
-- Development workflow and collaboration tools
+## 2. BACKEND IMPLEMENTATION (Weeks 1-4)
+### Database Setup
+- **Schema creation**: Complete SQL/NoSQL schema definitions with CREATE statements
+- **Migration setup**: Migration framework installation and first migration file
+- **Seed data**: Test data scripts and population procedures
+- **Connection configuration**: Database connection code with error handling
+- **Include complete migration files and seed scripts**
 
-## 4. CODING STANDARDS & QUALITY GUIDELINES
-- Code organization philosophy and folder structure rationale
-- Naming conventions and style guide principles
-- Code review processes and quality assurance approach
-- Git workflow and collaboration strategy
-- Documentation standards and knowledge management
+### API Development
+- **Server setup**: Express/Flask/Rails server initialization code
+- **Routing configuration**: Complete route definitions with middleware
+- **Controller implementation**: CRUD operations with full code examples
+- **Authentication**: JWT/OAuth implementation with complete auth middleware code
+- **Error handling**: Centralized error handling middleware with examples
+- **Include complete API endpoint implementations**
 
-## 5. TECHNICAL DEBT & MAINTENANCE STRATEGY
-- Technical debt identification and management
-- Refactoring strategy and timing
-- Performance monitoring and optimization approach
-- Long-term maintenance and upgrade planning
+### Business Logic
+- **Service layer**: Business logic classes with full implementations
+- **Data validation**: Input validation with Joi/Pydantic/validator examples
+- **Database operations**: Repository pattern implementations with queries
+- **Transaction handling**: Transaction management code examples
+- **Include complete service class implementations**
 
-IMPORTANT: Focus on STRATEGY and PLANNING. Provide setup concepts and approaches, NOT detailed code.
-Save implementation details for the actual development phase."""
+## 3. FRONTEND IMPLEMENTATION (Weeks 3-6)
+### UI Framework Setup
+- **React/Vue/Angular setup**: Create-react-app or equivalent with configurations
+- **State management**: Redux/Vuex/NgRx setup with store configuration
+- **Router configuration**: React-router/Vue-router setup with route definitions
+- **API client**: Axios/Fetch configuration with interceptors
+- **Include complete setup files and configurations**
+
+### Component Development
+- **Component structure**: Reusable component examples with props/state
+- **Form handling**: Complete form components with validation
+- **Data fetching**: API integration with loading/error states
+- **Authentication UI**: Login/signup components with JWT handling
+- **Include 5-10 complete component implementations**
+
+### Styling
+- **CSS framework setup**: Tailwind/Bootstrap/Material-UI configuration
+- **Theme configuration**: Custom theme setup and variables
+- **Responsive design**: Media query examples and mobile-first approach
+- **Include complete styling configuration and examples**
+
+## 4. TESTING IMPLEMENTATION (Throughout)
+### Unit Testing
+- **Test framework setup**: Jest/Pytest/RSpec configuration
+- **Test structure**: Complete test file examples for each component type
+- **Mock data**: Test fixtures and mock implementations
+- **Coverage setup**: Coverage reporting configuration
+- **Include 10+ complete test examples**
+
+### Integration Testing
+- **API testing**: Supertest/Postman/HTTPie examples
+- **Database testing**: Test database setup and teardown
+- **End-to-end testing**: Cypress/Selenium setup and test examples
+- **Include complete integration test suites**
+
+## 5. DEPLOYMENT & OPERATIONS (Weeks 7-8)
+### Docker Configuration
+- **Dockerfile**: Complete Dockerfile for each service
+- **Docker Compose**: Full docker-compose.yml with all services
+- **Environment variables**: .env template and configuration
+- **Include complete Docker setup**
+
+### CI/CD Pipeline
+- **GitHub Actions/GitLab CI**: Complete pipeline configuration files
+- **Build scripts**: npm scripts, Makefile, or automation scripts
+- **Deployment scripts**: Deploy-to-production procedures
+- **Include complete CI/CD configurations**
+
+### Production Setup
+- **Cloud deployment**: AWS/GCP/Azure deployment procedures and terraform/CloudFormation
+- **Domain and SSL**: DNS configuration and Let's Encrypt setup
+- **Monitoring**: New Relic/Datadog setup and alerting configuration
+- **Backups**: Automated backup scripts and restoration procedures
+- **Include step-by-step deployment commands**
+
+## 6. TROUBLESHOOTING & COMMON ISSUES
+- **Database connection errors**: Solutions with code examples
+- **CORS issues**: Configuration fixes with examples
+- **Authentication problems**: Debugging procedures and fixes
+- **Performance bottlenecks**: Optimization techniques with before/after code
+- **Include 10-15 common issues with solutions**
+
+IMPORTANT: This should be a COMPLETE TUTORIAL that a developer can follow step-by-step to build the entire system. Include every command, every configuration file, and every code example needed."""
 
             impl_doc = self.generate_response(impl_prompt, research_context, temperature=0.3, max_tokens=doc_max_tokens)
             documents.append({
@@ -408,50 +485,167 @@ Save implementation details for the actual development phase."""
             })
 
         try:
-            # Document 3: Security, Testing & Operations
-            logger.info("Generating Document 3: Security, Testing & Operations")
-            ops_prompt = f"""Create a COMPREHENSIVE SECURITY, TESTING & OPERATIONS GUIDE for: {user_prompt}
+            # Document 3: Security, Testing & Operations Implementation
+            logger.info("Generating Document 3: Security, Testing & Operations Implementation")
+            ops_prompt = f"""Create a COMPREHENSIVE SECURITY, TESTING & OPERATIONS IMPLEMENTATION GUIDE for: {user_prompt}
 
 RESEARCH CONTEXT: {research_context}
 TECHNICAL DISCUSSION: {conversation_summary}
 
-# Security, Testing & Operations Guide
+# Security, Testing & Operations Implementation Guide
 
-## 1. SECURITY IMPLEMENTATION
-- Authentication and authorization implementation
-- Data validation and sanitization strategies
-- Security headers and CORS configuration
-- Encryption for data at rest and in transit
-- Security audit checklist and penetration testing
+## 1. SECURITY IMPLEMENTATION WITH CODE
+### Authentication System
+- **JWT Implementation**: Complete authentication middleware with token generation/verification
+- **OAuth 2.0 Setup**: Full OAuth flow implementation with provider integration
+- **Password Security**: Bcrypt/Argon2 implementation with salting and hashing code
+- **Session Management**: Session store setup with Redis and security configurations
+- **Include complete authentication module code (200-300 lines)**
 
-## 2. COMPREHENSIVE TESTING STRATEGY
-- Unit testing setup with specific frameworks
-- Integration testing for APIs and databases
-- End-to-end testing for user workflows
-- Performance testing and load testing procedures
-- Security testing and vulnerability scanning
+### Authorization & Access Control
+- **RBAC Implementation**: Role-based access control with complete middleware
+- **Permission System**: Permission checking decorators and guards with examples
+- **API Key Management**: API key generation, storage, and validation code
+- **Include complete authorization system (150-200 lines)**
 
-## 3. DEPLOYMENT & OPERATIONS
-- Infrastructure requirements and specifications
-- CI/CD pipeline configuration with specific tools
-- Environment setup (dev, staging, production)
-- Monitoring, logging, and alerting implementation
-- Backup and disaster recovery procedures
+### Security Configurations
+- **Security Headers**: Helmet.js/Flask-Talisman configuration with all headers
+- **CORS Setup**: Complete CORS configuration with whitelist management
+- **Rate Limiting**: Express-rate-limit/Flask-Limiter with Redis store
+- **SQL Injection Prevention**: Parameterized queries and ORM usage examples
+- **XSS Protection**: Input sanitization and output encoding code
+- **CSRF Protection**: CSRF token implementation with validation
+- **Include 10+ security configuration files**
 
-## 4. PERFORMANCE & SCALABILITY
-- Performance optimization techniques
-- Caching strategies with Redis configuration
-- Database optimization and query performance
-- Load balancing and auto-scaling setup
-- Performance monitoring and alerting thresholds
+### Encryption Implementation
+- **Data at Rest**: Database encryption setup with AWS KMS/Azure Key Vault
+- **Data in Transit**: TLS/SSL configuration for HTTPS enforcement
+- **File Encryption**: File upload encryption with crypto libraries
+- **Environment Variables**: Secure secrets management with HashiCorp Vault
+- **Include complete encryption utilities (100-150 lines)**
 
-## 5. MAINTENANCE & TROUBLESHOOTING
-- Operational runbooks and procedures
-- Common issues and troubleshooting guides
-- Update and maintenance procedures
-- Technical debt management strategies
+## 2. COMPREHENSIVE TESTING WITH EXAMPLES
+### Unit Testing Suite
+- **Test Framework Setup**: Jest/Pytest/RSpec configuration files
+- **Test Structure**: 15-20 complete unit test examples for:
+  - Controller tests with mocked dependencies
+  - Service layer tests with test data
+  - Utility function tests with edge cases
+  - Database model tests with fixtures
+- **Mocking Examples**: Complete mock implementations for external services
+- **Test Coverage**: Istanbul/Coverage.py configuration for 80%+ coverage
+- **Include 500-1000 lines of test code examples**
 
-Include specific configurations, monitoring setup, and operational procedures."""
+### Integration Testing
+- **API Integration Tests**: Complete test suite for all endpoints
+  - Authentication flow tests (login, logout, token refresh)
+  - CRUD operation tests for each resource
+  - Error handling tests (400, 401, 403, 404, 500)
+  - File upload/download tests
+- **Database Integration Tests**: Transaction tests, rollback tests, migration tests
+- **Third-party Integration Tests**: Mock external APIs with nock/responses
+- **Include 300-500 lines of integration test code**
+
+### End-to-End Testing
+- **Cypress/Selenium Setup**: Complete E2E test configuration
+- **User Flow Tests**: 10-15 complete test scenarios:
+  - User registration and login flow
+  - Main application workflows
+  - Error recovery scenarios
+  - Mobile responsive tests
+- **Visual Regression Testing**: Percy/BackstopJS setup and configuration
+- **Include complete E2E test suite (400-600 lines)**
+
+### Performance & Load Testing
+- **Load Testing Scripts**: K6/Locust scripts for API endpoints
+- **Performance Benchmarks**: Baseline performance metrics and thresholds
+- **Database Query Profiling**: EXPLAIN query analysis and optimization
+- **Frontend Performance**: Lighthouse CI configuration and thresholds
+- **Include complete load testing scripts (200-300 lines)**
+
+## 3. DEPLOYMENT & OPERATIONS IMPLEMENTATIONS
+### Docker & Container Setup
+- **Complete Dockerfiles**: Production-ready Dockerfiles for all services (frontend, backend, database)
+- **Docker Compose**: Full docker-compose.yml with networking, volumes, health checks
+- **Multi-stage Builds**: Optimized build process for smaller images
+- **Docker Networking**: Service discovery and inter-container communication
+- **Include all Docker files (300-400 lines total)**
+
+### CI/CD Pipeline Implementation
+- **GitHub Actions**: Complete workflow files for:
+  - Pull request checks (lint, test, build)
+  - Automated deployment to staging/production
+  - Security scanning (Snyk, Trivy)
+  - Performance testing
+- **GitLab CI/Jenkins**: Alternative pipeline configurations
+- **Build Scripts**: Package.json scripts, Makefiles, deployment scripts
+- **Include complete CI/CD configurations (400-500 lines)**
+
+### Cloud Infrastructure
+- **Kubernetes Manifests**: Complete K8s deployments, services, ingress, configmaps
+- **Terraform/Pulumi**: Infrastructure as Code for AWS/GCP/Azure
+- **Helm Charts**: Complete Helm chart for application deployment
+- **Cloud Functions**: Serverless function examples for background tasks
+- **Include complete infrastructure code (500-800 lines)**
+
+### Monitoring & Logging
+- **Application Logging**: Winston/Structlog setup with log levels and formatting
+- **Centralized Logging**: ELK Stack/Loki configuration with log aggregation
+- **Application Monitoring**: Prometheus metrics endpoints and custom metrics
+- **Distributed Tracing**: Jaeger/Zipkin integration with trace context
+- **Alerting Rules**: Prometheus AlertManager rules for critical issues
+- **Dashboard Configuration**: Grafana dashboards JSON export
+- **Include complete monitoring setup (300-500 lines)**
+
+### Database Operations
+- **Backup Scripts**: Automated database backup scripts (pg_dump, mongodump)
+- **Restore Procedures**: Complete restoration procedures with commands
+- **Migration Scripts**: Database migration files with rollback support
+- **Replication Setup**: Primary-replica configuration for PostgreSQL/MySQL
+- **Include complete database operational scripts (200-300 lines)**
+
+## 4. PERFORMANCE OPTIMIZATION IMPLEMENTATIONS
+### Caching Implementation
+- **Redis Setup**: Complete Redis configuration and connection pooling
+- **Cache Strategies**: Cache-aside, write-through implementations with code
+- **Cache Invalidation**: Cache invalidation patterns and implementations
+- **API Response Caching**: HTTP caching headers and CDN configuration
+- **Include complete caching layer (200-300 lines)**
+
+### Database Optimization
+- **Index Creation**: Optimal index definitions with analysis
+- **Query Optimization**: Before/after examples of slow queries
+- **Connection Pooling**: PgBouncer/connection pool configuration
+- **N+1 Query Solutions**: Eager loading and join optimization examples
+- **Include 20+ optimization examples**
+
+### Application Performance
+- **Code Profiling**: Profiling setup and hotspot identification
+- **Async/Await Optimization**: Concurrent request handling examples
+- **Memory Leak Detection**: Memory profiling and leak prevention
+- **Bundle Optimization**: Webpack/Vite configuration for smaller bundles
+- **Include optimization code examples (300-400 lines)**
+
+## 5. OPERATIONAL RUNBOOKS & PROCEDURES
+### Production Runbooks
+- **Deployment Procedure**: Step-by-step deployment commands with rollback
+- **Incident Response**: Incident handling procedures with commands
+- **Database Maintenance**: Vacuum, analyze, reindex procedures
+- **Certificate Renewal**: SSL certificate renewal with Let's Encrypt
+- **Scaling Procedures**: Horizontal and vertical scaling commands
+- **Include 10-15 complete runbooks**
+
+### Troubleshooting Guide
+- **Common Issues**: 25+ issues with symptoms, diagnosis, and solutions
+  - "500 Internal Server Error" - debugging steps with log analysis
+  - "Database connection refused" - connection troubleshooting
+  - "High memory usage" - memory profiling and optimization
+  - "Slow API responses" - performance profiling steps
+- **Debug Commands**: Complete command-line debugging toolkit
+- **Log Analysis**: Log parsing commands and patterns to search for
+- **Include complete troubleshooting playbook**
+
+IMPORTANT: This should be a PRODUCTION-READY operations guide with every security configuration, test file, deployment script, and monitoring setup needed to run the system in production. Include complete, runnable code for everything.
 
             ops_doc = self.generate_response(ops_prompt, research_context, temperature=0.3, max_tokens=doc_max_tokens)
             documents.append({
@@ -473,43 +667,295 @@ Include specific configurations, monitoring setup, and operational procedures.""
         # Document 4: API Documentation & Integration Guide (if content is substantial enough)
         if len(conversation_summary) > 20000:  # Only create if there's substantial technical discussion
             try:
-                logger.info("Generating Document 4: API Documentation")
-                api_prompt = f"""Create an API DOCUMENTATION & INTEGRATION GUIDE for: {user_prompt}
+                logger.info("Generating Document 4: API Documentation & Integration Implementation")
+                api_prompt = f"""Create a COMPLETE API DOCUMENTATION & INTEGRATION IMPLEMENTATION GUIDE for: {user_prompt}
 
 RESEARCH CONTEXT: {research_context}
 TECHNICAL DISCUSSION: {conversation_summary}
 
-# API Documentation & Integration Guide
+# API Documentation & Integration Implementation Guide
 
-## 1. API SPECIFICATIONS
-- Complete API endpoint documentation
-- Request/response schemas with examples
-- Authentication and authorization requirements
-- Error handling and status codes
-- Rate limiting and usage policies
+## 1. COMPLETE API ENDPOINT SPECIFICATIONS
+For EVERY API endpoint, provide:
 
-## 2. INTEGRATION PATTERNS
-- Third-party service integrations
-- Webhook implementation and handling
-- Event-driven architecture patterns
-- Message queue implementation
-- External API consumption strategies
+### Authentication Endpoints
+**POST /api/auth/register**
+- **Description**: User registration endpoint
+- **Request Headers**: Content-Type: application/json
+- **Request Body Schema**:
+  ```json
+  {{
+    "email": "string (required, email format)",
+    "password": "string (required, min 8 chars)",
+    "name": "string (required)"
+  }}
+  ```
+- **Success Response (201)**:
+  ```json
+  {{
+    "user": {{"id": 123, "email": "user@example.com", "name": "John Doe"}},
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }}
+  ```
+- **Error Responses**:
+  - 400: {{"error": "Email already exists"}}
+  - 422: {{"error": "Invalid email format"}}
+- **cURL Example**:
+  ```bash
+  curl -X POST https://api.example.com/auth/register \
+    -H "Content-Type: application/json" \
+    -d '{{"email":"user@example.com","password":"secure123","name":"John Doe"}}'
+  ```
+- **JavaScript Example**:
+  ```javascript
+  const response = await fetch('/api/auth/register', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{email, password, name}})
+  }});
+  const data = await response.json();
+  ```
+- **Python Example**:
+  ```python
+  response = requests.post('https://api.example.com/auth/register',
+    json={{"email": "user@example.com", "password": "secure123", "name": "John Doe"}})
+  data = response.json()
+  ```
 
-## 3. DATA CONTRACTS & SCHEMAS
-- JSON schema definitions
-- Data validation rules and patterns
-- API versioning strategy
-- Backward compatibility considerations
-- Migration strategies for schema changes
+**Repeat this detailed format for ALL endpoints** (15-30 endpoints total):
+- POST /api/auth/login
+- POST /api/auth/logout
+- POST /api/auth/refresh
+- GET /api/users/me
+- PUT /api/users/:id
+- DELETE /api/users/:id
+- GET /api/resources (with pagination, filtering, sorting)
+- POST /api/resources
+- GET /api/resources/:id
+- PUT /api/resources/:id
+- PATCH /api/resources/:id
+- DELETE /api/resources/:id
+- Plus any domain-specific endpoints
 
-## 4. DEVELOPER RESOURCES
-- SDK/client library specifications
-- Code examples in multiple languages
-- Postman collections and test suites
-- Integration testing strategies
-- Troubleshooting common integration issues
+## 2. API CLIENT IMPLEMENTATIONS
+### Complete JavaScript/TypeScript SDK
+```typescript
+// Complete 200-300 line SDK implementation
+class ApiClient {{
+  private baseUrl: string;
+  private token: string | null = null;
 
-Include complete API specifications, code examples, and integration patterns."""
+  constructor(baseUrl: string) {{
+    this.baseUrl = baseUrl;
+  }}
+
+  async register(email: string, password: string, name: string) {{
+    // Complete implementation with error handling
+  }}
+
+  async login(email: string, password: string) {{
+    // Complete implementation
+  }}
+
+  async getResource(id: number) {{
+    // Complete implementation
+  }}
+
+  // Include ALL methods for ALL endpoints
+}}
+```
+
+### Complete Python SDK
+```python
+# Complete 200-300 line Python client
+class ApiClient:
+    def __init__(self, base_url: str):
+        self.base_url = base_url
+        self.token = None
+    
+    def register(self, email: str, password: str, name: str) -> dict:
+        # Complete implementation
+        pass
+    
+    # Include ALL methods for ALL endpoints
+```
+
+### Complete Go SDK
+```go
+// Complete 200-300 line Go client
+package apiclient
+
+type Client struct {{
+    BaseURL string
+    Token   string
+}}
+
+func NewClient(baseURL string) *Client {{
+    // Complete implementation
+}}
+
+// Include ALL methods for ALL endpoints
+```
+
+## 3. THIRD-PARTY INTEGRATIONS WITH CODE
+### Stripe Payment Integration
+- **Setup Code**: Complete Stripe SDK initialization
+- **Payment Intent Creation**: Full implementation with error handling
+- **Webhook Handler**: Complete webhook endpoint with signature verification
+- **Test Mode Setup**: Test card numbers and testing procedures
+- **Include 300-500 lines of integration code**
+
+### AWS S3 File Upload Integration
+- **S3 Client Setup**: Complete AWS SDK configuration
+- **Pre-signed URL Generation**: Full implementation for secure uploads
+- **Direct Upload Code**: Client-side and server-side upload examples
+- **File Processing**: Image resizing, format conversion examples
+- **Include 200-400 lines of integration code**
+
+### SendGrid/Mailgun Email Integration
+- **Email Client Setup**: Complete SDK initialization
+- **Template System**: Email template examples (HTML + text)
+- **Transactional Emails**: Order confirmation, password reset implementations
+- **Bulk Email**: Newsletter sending with batching
+- **Include 150-250 lines of email integration code**
+
+### Twilio SMS/WhatsApp Integration
+- **Twilio Setup**: Complete client initialization
+- **SMS Sending**: SMS notification implementations
+- **Two-Factor Authentication**: 2FA implementation with Twilio Verify
+- **WhatsApp Business**: WhatsApp message templates and sending
+- **Include 150-250 lines of Twilio integration code**
+
+### Redis Pub/Sub for Real-time Features
+- **Redis Setup**: Pub/sub client configuration
+- **Event Publishing**: Event emission code for different events
+- **Event Subscription**: Event listener implementations
+- **WebSocket Integration**: Socket.io with Redis adapter
+- **Include 200-300 lines of pub/sub code**
+
+## 4. DATA SCHEMAS & VALIDATION
+### Complete JSON Schemas
+```json
+// User Schema
+{{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {{
+    "id": {{"type": "integer"}},
+    "email": {{"type": "string", "format": "email"}},
+    "name": {{"type": "string", "minLength": 1, "maxLength": 100}},
+    "createdAt": {{"type": "string", "format": "date-time"}}
+  }},
+  "required": ["id", "email", "name", "createdAt"]
+}}
+
+// Include schemas for ALL data models (10-20 schemas)
+```
+
+### Validation Implementations
+- **Joi Validation (Node.js)**: Complete validation schemas for all endpoints
+- **Pydantic Models (Python)**: Complete Pydantic models with validators
+- **Zod Schemas (TypeScript)**: Complete type-safe validation schemas
+- **Include 200-400 lines of validation code**
+
+## 5. OPENAPI/SWAGGER SPECIFICATION
+```yaml
+# Complete 500-1000 line OpenAPI 3.0 specification
+openapi: 3.0.0
+info:
+  title: Project API
+  version: 1.0.0
+  description: Complete API documentation
+
+servers:
+  - url: https://api.example.com/v1
+    description: Production server
+  - url: http://localhost:3000/v1
+    description: Development server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  
+  schemas:
+    # Include ALL schemas
+  
+paths:
+  # Include ALL endpoints with complete specs
+  /auth/register:
+    post:
+      summary: Register new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+  
+  # Complete specification for ALL endpoints
+```
+
+## 6. POSTMAN COLLECTION & TESTING
+- **Complete Postman Collection**: JSON export with all endpoints and examples
+- **Environment Variables**: Dev, staging, production environment configs
+- **Pre-request Scripts**: Auth token refresh scripts
+- **Test Scripts**: Automated test assertions for each endpoint
+- **Include complete Postman collection (500-800 lines JSON)**
+
+## 7. WEBHOOK IMPLEMENTATIONS
+### Webhook Endpoint
+```javascript
+// Complete webhook receiver implementation
+app.post('/webhooks/stripe', async (req, res) => {{
+  const sig = req.headers['stripe-signature'];
+  // Complete implementation with:
+  // - Signature verification
+  // - Event handling for all event types
+  // - Idempotency handling
+  // - Error handling and retry logic
+  // 150-250 lines
+}});
+```
+
+### Webhook Sending (Outbound)
+- **Webhook Registration API**: CRUD endpoints for webhook subscriptions
+- **Event Queue**: Message queue implementation for reliable delivery
+- **Retry Logic**: Exponential backoff retry implementation
+- **Webhook Security**: HMAC signature generation code
+- **Include complete webhook system (400-600 lines)**
+
+## 8. RATE LIMITING & QUOTAS
+- **Rate Limit Implementation**: Complete rate limiting middleware with Redis
+- **Quota Tracking**: API usage tracking and billing code
+- **Rate Limit Headers**: X-RateLimit-* header implementation
+- **Quota Exceeded Handling**: 429 response handling examples
+- **Include complete rate limiting system (200-300 lines)**
+
+## 9. API VERSIONING IMPLEMENTATION
+- **URL Versioning**: /v1, /v2 routing implementation
+- **Header Versioning**: Accept-Version header handling
+- **Deprecation Strategy**: Sunset header and migration guides
+- **Version Migration**: Code examples for breaking changes
+- **Include versioning system (150-250 lines)**
+
+## 10. ERROR HANDLING & DEBUGGING
+- **Error Response Format**: Standardized error response structure
+- **Error Codes**: Complete list of application error codes
+- **Debug Mode**: Request ID tracking and debug logging
+- **API Health Check**: /health endpoint implementation
+- **Include error handling utilities (200-300 lines)**
+
+IMPORTANT: This should be a COMPLETE, PRODUCTION-READY API documentation that includes every single endpoint specification, complete SDK implementations in 3+ languages, full integration code for all third-party services, and everything a developer needs to integrate with the API.
 
                 api_doc = self.generate_response(api_prompt, research_context, temperature=0.3, max_tokens=doc_max_tokens)
                 documents.append({

@@ -2,6 +2,7 @@ import logging
 import json
 import uuid
 import os
+import threading
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, session, send_file
 from config.settings import Config
@@ -79,6 +80,74 @@ except Exception as e:
 # Session cleanup configuration
 MAX_STORED_SESSIONS = 50  # Limit number of stored sessions
 SESSION_TIMEOUT_HOURS = 24  # Auto-cleanup sessions older than 24 hours
+
+# Background worker threads tracking
+worker_threads = {}
+
+def background_workflow_worker(session_id):
+    """
+    Background worker that executes the complete workflow for a session.
+    Runs all rounds until completion or error.
+    """
+    try:
+        if session_id not in global_sessions:
+            logger.error(f"Session {session_id} not found in background worker")
+            return
+        
+        session_data = global_sessions[session_id]
+        orchestrator = session_data.get('orchestrator')
+        context = session_data.get('context')
+        
+        if not context or not orchestrator:
+            logger.error(f"Invalid session data for {session_id}")
+            return
+        
+        logger.info(f"🚀 Background worker started for session {session_id}")
+        
+        # Execute rounds until completion
+        max_rounds = 50  # Safety limit
+        round_count = 0
+        
+        while context.current_stage != ConversationStage.COMPLETED and round_count < max_rounds:
+            try:
+                round_count += 1
+                logger.info(f"🔄 Background worker executing round {round_count}, stage: {context.current_stage.value}")
+                
+                context = orchestrator.execute_conversation_round(context)
+                
+                # Update session data
+                session_data['context'] = context
+                session_data['current_stage'] = context.current_stage.value
+                session_data['conversation_round'] = context.conversation_round
+                session_data['last_updated'] = datetime.now().isoformat()
+                
+                logger.info(f"✓ Round {round_count} complete. Stage: {context.current_stage.value}")
+                
+                # Small delay between rounds to allow UI updates
+                import time
+                time.sleep(0.5)
+                
+            except Exception as e:
+                logger.error(f"❌ ERROR in background worker round {round_count}: {e}", exc_info=True)
+                context.metadata['error'] = str(e)
+                context.metadata['failed'] = True
+                context.current_stage = ConversationStage.COMPLETED
+                update_status(session_id, "System", "ERROR", f"Failed: {str(e)}")
+                break
+        
+        if round_count >= max_rounds:
+            logger.warning(f"⚠️ Background worker hit max rounds ({max_rounds}) for session {session_id}")
+            context.current_stage = ConversationStage.COMPLETED
+        
+        logger.info(f"✅ Background worker completed for session {session_id} after {round_count} rounds")
+        clear_status(session_id)
+        
+        # Remove from worker threads
+        if session_id in worker_threads:
+            del worker_threads[session_id]
+            
+    except Exception as e:
+        logger.error(f"❌ FATAL ERROR in background worker for {session_id}: {e}", exc_info=True)
 
 def update_status(session_id, llm_name, activity, details="", research_context=None):
     """Update the current status for a session"""
@@ -1253,7 +1322,17 @@ def api_start_research():
             'last_updated': datetime.now().isoformat()
         }
         
-        logger.info(f"✨ Started new research session: {session_id}")
+        # Start background worker thread
+        worker_thread = threading.Thread(
+            target=background_workflow_worker,
+            args=(session_id,),
+            daemon=True,
+            name=f"Worker-{session_id[:8]}"
+        )
+        worker_thread.start()
+        worker_threads[session_id] = worker_thread
+        
+        logger.info(f"✨ Started new research session: {session_id} with background worker")
         
         return jsonify({
             'success': True,
@@ -1279,17 +1358,6 @@ def api_get_status(session_id):
         
         if not context:
             return jsonify({'success': False, 'error': 'Invalid session'}), 500
-        
-        # Execute next round if not completed
-        if context.current_stage != ConversationStage.COMPLETED:
-            try:
-                context = orchestrator.execute_conversation_round(context)
-                session_data['context'] = context
-                session_data['current_stage'] = context.current_stage.value
-                session_data['conversation_round'] = context.conversation_round
-                session_data['last_updated'] = datetime.now().isoformat()
-            except Exception as e:
-                logger.error(f"Error executing round: {e}", exc_info=True)
         
         # Get progress summary
         progress = orchestrator.get_progress_summary(context)

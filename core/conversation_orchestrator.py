@@ -34,7 +34,7 @@ class ConversationOrchestrator:
         self.ollama_client = OllamaClient()
         self.serper_client = SerperClient()
         self.file_manager = FileManager()
-        self.max_rounds = 20  # Reduced from 50
+        self.max_rounds = 50  # Increased to handle 5 stages + 4 documents
         self.status_callback = None
         self._current_context = None
         
@@ -381,7 +381,7 @@ Be comprehensive - use up to 8,000 tokens for this analysis."""
 
         message = self.deepseek_client.generate_response(
             prompt,
-            research_context=research_text[:50000],  # Additional context
+            context=research_text[:50000],  # Additional context
             max_tokens=8000,
             temperature=0.3
         )
@@ -504,8 +504,20 @@ Be comprehensive - use up to 8,000 tokens for this analysis."""
         current_idx = context.metadata.get('current_document_index', 0)
         completed = context.metadata.get('completed_documents', [])
         
+        # Safety check
+        if not outlines or len(outlines) == 0:
+            logger.error("❌ No document outlines found! Cannot write documents.")
+            self._update_status("System", "ERROR", "No document outlines - Stage 4 may have failed")
+            context.metadata['error'] = "No document outlines created in Stage 4"
+            context.current_stage = ConversationStage.COMPLETED
+            return context
+        
         if current_idx >= len(outlines):
-            logger.info("✅ All documents written")
+            logger.info(f"✅ All {len(outlines)} documents written")
+            
+            # Save final summary
+            self._save_session_summary(context, completed)
+            
             self._update_status(
                 "Ollama",
                 "Stage 5/5: Complete",
@@ -534,9 +546,20 @@ Be comprehensive - use up to 8,000 tokens for this analysis."""
             user_prompt=context.user_prompt
         )
         
+        # Generate filename
+        filename = f"{current_idx+1:02d}_{current_outline['title'].lower().replace(' ', '_').replace('&', 'and')}.md"
+        
+        # Save document to disk immediately
+        saved_path = self.file_manager.save_document(
+            session_id=context.session_id,
+            title=current_outline['title'],
+            content=document.content
+        )
+        
         completed.append({
             "title": current_outline['title'],
-            "filename": f"{current_idx+1:02d}_{current_outline['title'].lower().replace(' ', '_').replace('&', 'and')}.md",
+            "filename": filename,
+            "filepath": saved_path,
             "content": document.content,
             "word_count": len(document.content.split()),
             "char_count": len(document.content)
@@ -546,6 +569,7 @@ Be comprehensive - use up to 8,000 tokens for this analysis."""
         context.metadata['current_document_index'] = current_idx + 1
         
         logger.info(f"✅ Document {current_idx+1} complete ({len(document.content)} chars, {len(document.content.split())} words)")
+        logger.info(f"💾 Saved to: {saved_path}")
         
         self._update_status(
             "Ollama",
@@ -599,3 +623,55 @@ Be comprehensive - use up to 8,000 tokens for this analysis."""
             ConversationStage.COMPLETED: "Completed"
         }
         return names.get(stage, stage.value)
+    
+    def _save_session_summary(self, context: ResearchContext, completed_docs: List[Dict]) -> None:
+        """Save a summary file with all document information"""
+        try:
+            from datetime import datetime
+            
+            # Build summary content
+            summary_lines = [
+                f"# Research Session Summary",
+                f"",
+                f"**Session ID**: {context.session_id}",
+                f"**User Prompt**: {context.user_prompt}",
+                f"**Completed**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                f"**Total Rounds**: {context.conversation_round}",
+                f"",
+                f"## Research Statistics",
+                f"",
+                f"- **Research Queries**: {len(context.metadata.get('research_queries', []))}",
+                f"- **Sources Collected**: {context.metadata.get('total_sources', 0)}",
+                f"- **Documents Generated**: {len(completed_docs)}",
+                f"- **Total Words**: {sum(doc.get('word_count', 0) for doc in completed_docs):,}",
+                f"- **Total Characters**: {sum(doc.get('char_count', 0) for doc in completed_docs):,}",
+                f"",
+                f"## Generated Documents",
+                f""
+            ]
+            
+            # List each document
+            for idx, doc in enumerate(completed_docs, 1):
+                summary_lines.extend([
+                    f"### {idx}. {doc['title']}",
+                    f"",
+                    f"- **Filename**: `{doc['filename']}`",
+                    f"- **Location**: `{doc.get('filepath', 'N/A')}`",
+                    f"- **Word Count**: {doc.get('word_count', 0):,}",
+                    f"- **Character Count**: {doc.get('char_count', 0):,}",
+                    f""
+                ])
+            
+            summary_content = "\n".join(summary_lines)
+            
+            # Save summary file
+            summary_path = self.file_manager.save_document(
+                session_id=context.session_id,
+                title="00_SESSION_SUMMARY",
+                content=summary_content
+            )
+            
+            logger.info(f"📋 Session summary saved: {summary_path}")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to save session summary: {e}")

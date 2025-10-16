@@ -60,6 +60,34 @@ class FileManager:
             logger.error(f"Failed to save development plan: {e}")
             raise
     
+    def save_document(self, session_id: str, title: str, content: str) -> str:
+        """
+        Save a single document to disk immediately.
+        Returns the full path to the saved file.
+        """
+        try:
+            # Create session directory if it doesn't exist
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            session_dir = os.path.join(self.devplan_dir, f"{timestamp}_{session_id[:8]}")
+            os.makedirs(session_dir, exist_ok=True)
+            
+            # Generate safe filename
+            safe_title = self._sanitize_filename(title)
+            filename = f"{safe_title}.md"
+            filepath = os.path.join(session_dir, filename)
+            
+            # Write document to file
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(f"# {title}\n\n")
+                f.write(content)
+            
+            logger.info(f"💾 Document saved: {filepath} ({len(content)} chars)")
+            return filepath
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to save document '{title}': {e}")
+            raise
+    
     def load_development_plan(self, filename: str) -> Optional[Dict[str, Any]]:
         """Load a development plan from file"""
         try:

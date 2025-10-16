@@ -52,6 +52,8 @@ class AIResearchSystem {
             
             if (data.success) {
                 this.currentSession = data.session_id;
+                console.log('🎯 SESSION STARTED:', data.session_id);
+                console.log('📋 To monitor: python monitor_session.py', data.session_id);
                 this.addActivity('system', 'Research Started', 'Initializing 5-stage workflow...');
                 
                 // Start polling for updates
@@ -88,13 +90,24 @@ class AIResearchSystem {
             const response = await fetch(`/api/status/${this.currentSession}`);
             const data = await response.json();
 
+            console.log('📊 Poll Response:', {
+                stage: data.stage,
+                round: data.conversation_round,
+                docs_planned: data.documents_planned,
+                docs_completed: data.documents_completed,
+                docs_total: data.documents_total
+            });
+
             if (data.success) {
                 this.updateUI(data);
 
                 // Check if completed
                 if (data.stage === 'completed') {
+                    console.log('✅ Research marked as COMPLETED');
                     this.stopPolling();
                     this.onResearchComplete(data);
+                } else {
+                    console.log(`⟳ Stage ${data.stage} in progress...`);
                 }
             }
         } catch (error) {

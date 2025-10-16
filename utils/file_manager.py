@@ -214,11 +214,15 @@ class FileManager:
     
     def _sanitize_filename(self, filename: str) -> str:
         """Sanitize a string to be safe for use as a filename"""
-        # Replace problematic characters
-        sanitized = filename.replace(' ', '_').replace('/', '_').replace('\\', '_')
+        # Replace problematic characters including newlines and carriage returns
+        sanitized = filename.replace('\n', '_').replace('\r', '_')
+        sanitized = sanitized.replace(' ', '_').replace('/', '_').replace('\\', '_')
         sanitized = sanitized.replace(':', '_').replace('*', '_').replace('?', '_')
         sanitized = sanitized.replace('"', '_').replace('<', '_').replace('>', '_')
-        sanitized = sanitized.replace('|', '_')
+        sanitized = sanitized.replace('|', '_').replace('\t', '_')
+        
+        # Remove any remaining control characters
+        sanitized = ''.join(c if c.isprintable() or c in ('_', '-') else '_' for c in sanitized)
         
         # Limit length
         if len(sanitized) > 100:
@@ -364,7 +368,7 @@ class FileManager:
             return False
     
     def save_multiple_documents(self, plan_data: Dict[str, Any]) -> Dict[str, str]:
-        """Save multiple documents for a single project"""
+        """Save multiple documents for a single project - documents as .md, metadata as .json"""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             project_name = self._sanitize_filename(plan_data.get('project_name', 'unknown_project'))
@@ -397,6 +401,31 @@ class FileManager:
             saved_files['Research Summary'] = summary_filepath
             logger.info(f"Research summary saved: {summary_filepath}")
             
+            # Save project metadata as JSON (without document content - just references)
+            metadata = {
+                'project_name': plan_data.get('project_name', 'Unknown Project'),
+                'user_prompt': plan_data.get('user_prompt', ''),
+                'generated_at': plan_data.get('generated_at', datetime.now().isoformat()),
+                'session_id': plan_data.get('session_id', ''),
+                'multi_document': plan_data.get('multi_document', True),
+                'documents': [
+                    {
+                        'title': doc.get('title', 'Untitled'),
+                        'filename': doc.get('filename', 'document.md'),
+                        'category': doc.get('category', 'general'),
+                        'size': len(doc.get('content', ''))
+                    }
+                    for doc in documents
+                ],
+                'research_metrics': plan_data.get('research_metrics', {}),
+                'saved_files': {title: os.path.basename(path) for title, path in saved_files.items()}
+            }
+            
+            metadata_filepath = os.path.join(project_dir, 'project_plan.json')
+            with open(metadata_filepath, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"Project metadata saved: {metadata_filepath}")
             logger.info(f"Multiple documents saved in: {project_dir}")
             return saved_files
             

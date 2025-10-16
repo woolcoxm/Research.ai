@@ -12,18 +12,13 @@ class LLMType(Enum):
 
 
 class ConversationStage(Enum):
-    # New iterative workflow
-    INITIAL_BREAKDOWN = "initial_breakdown"           # 1. DeepSeek breaks prompt into key points
-    DISCUSS_BREAKDOWN = "discuss_breakdown"           # 2. LLMs discuss key points & what to research
-    RESEARCH = "research"                             # 3. Perform searches on topics LLMs identified
-    ANALYZE_RESEARCH = "analyze_research"             # 4. DeepSeek breaks down research findings
-    DISCUSS_FINDINGS = "discuss_findings"             # 5. LLMs discuss findings & extract key points
-    DEEP_DIVE = "deep_dive"                           # 6. LLMs discuss key points, more searches if needed
-    COMPILE_INFORMATION = "compile_information"       # 7. DeepSeek compiles all information
-    DISCUSS_COMPILATION = "discuss_compilation"       # 8. LLMs discuss compilation, more searches if needed
-    GENERATE_DOCUMENTS = "generate_documents"         # 9. DeepSeek creates 1-7 documents
-    REFINE_DOCUMENTS = "refine_documents"             # 10. LLMs discuss & refine documents until perfect
-    COMPLETED = "completed"                           # 11. Documents ready for download
+    # NEW STREAMLINED WORKFLOW - 5 Stages
+    RESEARCH_PLANNING = "research_planning"           # 1. DeepSeek creates targeted research queries
+    WEB_RESEARCH = "web_research"                     # 2. Serper performs parallel web searches
+    RESEARCH_ANALYSIS = "research_analysis"           # 3. DeepSeek analyzes all research and extracts insights
+    DOCUMENT_PLANNING = "document_planning"           # 4. DeepSeek creates detailed document outlines
+    DOCUMENT_WRITING = "document_writing"             # 5. Ollama writes comprehensive documents (64K tokens)
+    COMPLETED = "completed"                           # ✓ Documents ready for download
 
 
 class QualityLevel(Enum):
@@ -77,7 +72,7 @@ class ResearchContext:
     
     # Conversation data
     messages: List[LLMMessage] = field(default_factory=list)
-    current_stage: ConversationStage = ConversationStage.INITIAL_BREAKDOWN  # Updated for new workflow
+    current_stage: ConversationStage = ConversationStage.RESEARCH_PLANNING  # Start with research planning
     conversation_round: int = 0
     metadata: Dict[str, Any] = field(default_factory=dict)  # For storing workflow state
     

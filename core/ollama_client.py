@@ -300,6 +300,345 @@ Ensure each section provides unique, actionable technical insights. Build upon D
 
         return self.generate_response(prompt, research_context, max_tokens=Config.OLLAMA_DISCUSSION_MAX_TOKENS)
     
+    # ==================== NEW: OPTIMIZED DOCUMENT WORKFLOW ====================
+    
+    def write_document_from_outline(self,
+                                    outline: str,
+                                    research_summary: str,
+                                    doc_number: int,
+                                    doc_type: str,
+                                    user_prompt: str) -> LLMMessage:
+        """Write COMPREHENSIVE, PRODUCTION-READY document from DeepSeek's outline (64K capacity!)"""
+        
+        prompt = f"""You are an expert technical writer creating PRODUCTION-READY, ENTERPRISE-LEVEL documentation that covers the COMPLETE SOFTWARE DEVELOPMENT LIFECYCLE.
+
+PROJECT: {user_prompt}
+DOCUMENT #{doc_number}: {doc_type}
+
+DETAILED OUTLINE (follow EXACTLY and EXPAND MASSIVELY):
+{outline}
+
+RESEARCH SUMMARY (use for technical accuracy and examples):
+{research_summary}
+
+🎯 YOUR MISSION:
+Write a MASSIVE, COMPREHENSIVE IMPLEMENTATION GUIDE that a development team can use to build a COMPLETE PRODUCTION SYSTEM from scratch. This is NOT a tutorial - this is ENTERPRISE DOCUMENTATION.
+
+📋 CRITICAL REQUIREMENTS (ALL MANDATORY):
+
+1. **DOCUMENT LENGTH**: 20,000-30,000+ words minimum
+   - This should take 30-60 minutes to read
+   - If you're not using 60,000+ tokens, you're not detailed enough
+
+2. **CODE VOLUME**: 3,000-5,000+ lines of actual code
+   - COMPLETE implementations, not snippets
+   - NO placeholders like "..." or "// rest of code"
+   - Every file must be production-ready and runnable
+   - Include 50-100+ complete code examples
+
+3. **CONFIGURATION FILES**: 30-50+ complete configuration files
+   - package.json/requirements.txt with ALL 50+ dependencies
+   - Complete tsconfig.json, .eslintrc, .prettierrc
+   - Complete docker-compose.yml with all services
+   - Complete CI/CD pipeline files (300+ lines)
+   - Complete .env.example with 50-100 variables
+   - Every configuration file must be COMPLETE and copy-pasteable
+
+4. **DEVELOPMENT LIFECYCLE COVERAGE** (ALL phases required):
+   
+   **PHASE 1: Requirements & Planning**
+   - 30-50 functional requirements with acceptance criteria
+   - 20-30 user stories with detailed scenarios
+   - Complete system architecture diagrams (textual/Mermaid)
+   - Technology stack justification (500+ words)
+   - Project timeline with milestones
+   
+   **PHASE 2: Environment Setup** (Day-by-day, Week 1)
+   - Complete OS setup (Windows/Mac/Linux) - all commands
+   - Install 20+ tools with exact versions and commands
+   - IDE setup with 30+ extensions listed
+   - Database installation and configuration (complete)
+   - Docker, Redis, message queues setup (complete)
+   - Project initialization with every command explained
+   
+   **PHASE 3: Database Design** (Week 1-2)
+   - Complete SQL schema for 15-30 tables
+   - Every table with ALL columns, constraints, indices
+   - Complete migration files (3-5 migrations, 500+ lines total)
+   - Seed data scripts (200+ lines)
+   - Complete ORM models for ALL entities (2,000-3,000 lines)
+   
+   **PHASE 4: Backend Implementation** (Week 2-4)
+   - Complete server setup (300+ lines)
+   - Authentication system (JWT + OAuth) - COMPLETE (800-1,000 lines)
+   - Authorization & RBAC - COMPLETE (500+ lines)
+   - ALL API endpoints for ALL resources (15-30 resources)
+   - For EACH resource: GET, POST, PUT, DELETE, PATCH endpoints
+   - Complete service layer for ALL business logic (2,000-3,000 lines)
+   - Complete validation schemas for ALL endpoints (1,000+ lines)
+   - Complete error handling middleware (300+ lines)
+   
+   **PHASE 5: Frontend Implementation** (Week 3-5)
+   - Complete framework setup with all configurations
+   - 30-50 reusable components (COMPLETE implementations)
+   - 20-30 pages/views (COMPLETE implementations)
+   - Complete state management setup (Redux/MobX/Context)
+   - Complete API client with all methods (1,000+ lines)
+   - Complete routing with protected routes (300+ lines)
+   - Forms with validation (10-15 complete forms)
+   
+   **PHASE 6: Testing Implementation** (Week 5-6)
+   - Unit tests for EVERY component/service (3,000-5,000 lines)
+   - Integration tests for ALL API endpoints (2,000-3,000 lines)
+   - E2E tests for ALL user flows (1,000-2,000 lines)
+   - Test configurations (Jest, Pytest, Cypress - complete)
+   - Mock data and fixtures (500+ lines)
+   
+   **PHASE 7: Security Implementation** (Throughout)
+   - Complete security middleware (500+ lines)
+   - Input validation EVERYWHERE (examples)
+   - SQL injection prevention (examples)
+   - XSS prevention (examples)
+   - CSRF protection (implementation)
+   - Rate limiting (complete config)
+   - Data encryption (implementation)
+   - Security headers (complete Helmet.js config)
+   
+   **PHASE 8: DevOps & Deployment** (Week 6-7)
+   - Complete Dockerfiles for ALL services (500+ lines total)
+   - Complete docker-compose.yml (300+ lines)
+   - Complete CI/CD pipelines (GitHub Actions, 400+ lines)
+   - Complete deployment scripts (300+ lines)
+   - Complete Kubernetes manifests OR Terraform (500+ lines)
+   - Complete monitoring setup (Prometheus/Grafana configs)
+   - Complete logging setup (Winston/Pino configurations)
+   
+   **PHASE 9: Operations & Maintenance** (Ongoing)
+   - 20-30 operational runbooks (200+ lines each)
+   - 50+ troubleshooting scenarios with solutions
+   - Performance optimization guide (500+ words)
+   - Database maintenance procedures
+   - Backup and restore procedures
+   - Incident response procedures
+   - Scaling procedures (horizontal and vertical)
+   
+   **PHASE 10: Documentation** (Week 7-8)
+   - Complete API documentation (OpenAPI/Swagger spec, 2,000+ lines)
+   - Developer onboarding guide (1,000+ words)
+   - User documentation (1,000+ words)
+   - Admin guide (1,000+ words)
+
+5. **WRITING STYLE**:
+   - Every section must be DETAILED and COMPREHENSIVE
+   - Provide COMPLETE code - never use "..." or omit code
+   - Include EVERY command with explanations
+   - Show BOTH what to do AND why to do it
+   - Include error handling in EVERY code example
+   - Add comments explaining complex logic
+   - Provide troubleshooting for common issues
+   - Cite research sources: [Source: URL]
+
+6. **QUALITY STANDARDS**:
+   - Production-ready code only
+   - Follow best practices and design patterns
+   - Include security considerations everywhere
+   - Include performance optimizations
+   - Include scalability considerations
+   - Include monitoring and observability
+   - Include disaster recovery planning
+
+7. **STRUCTURE FOR EACH SECTION**:
+   ```
+   ## Section Title
+   
+   ### Overview (100-200 words)
+   - What this section covers
+   - Why it's important
+   - How it fits in the system
+   
+   ### Prerequisites (if applicable)
+   - What must be done first
+   - Required knowledge
+   - Required tools
+   
+   ### Step-by-Step Implementation
+   
+   #### Step 1: [Task Name]
+   
+   **Why**: Explanation of purpose (50-100 words)
+   
+   **How**: Detailed procedure
+   ```bash
+   # Complete commands with explanations
+   command1 --option value
+   command2 --flag
+   ```
+   
+   **What**: Complete code implementation
+   ```typescript
+   // Complete file: src/path/to/file.ts
+   // EVERY line of code needed - 100-300 lines
+   
+   import { everything } from 'packages';
+   
+   // ... COMPLETE implementation
+   ```
+   
+   **Configuration**: Complete config files
+   ```json
+   {
+     "note": "Complete package.json or equivalent with EVERY field filled in"
+   }
+   ```
+   
+   **Verification**: How to test it works
+   ```bash
+   # Commands to verify
+   ```
+   
+   **Troubleshooting**: Common issues (3-5 issues)
+   - Issue 1: Symptom → Diagnosis → Solution
+   - Issue 2: Symptom → Diagnosis → Solution
+   
+   #### Step 2: [Next Task]
+   ... (repeat structure)
+   ```
+
+🚨 ABSOLUTE REQUIREMENTS:
+- Use ALL 64,000 tokens available - this document should be MASSIVE
+- Include 3,000-5,000+ lines of actual code
+- Include 30-50+ complete configuration files
+- Cover ENTIRE development lifecycle from day 1 to production
+- A developer should be able to build a COMPLETE PRODUCTION SYSTEM using ONLY this document
+- NO SUMMARIES - provide FULL IMPLEMENTATIONS
+- NO PLACEHOLDERS - provide COMPLETE CODE
+- Think "What would I need to give a junior developer to build this entire system?"
+
+Write the COMPLETE, MASSIVE, PRODUCTION-READY document now:
+
+---
+
+# {doc_type}
+
+"""
+
+        # Use maximum token capacity for comprehensive documentation
+        max_tokens = Config.OLLAMA_COMPREHENSIVE_WRITE_MAX_TOKENS
+        return self.generate_response(prompt, max_tokens=max_tokens, temperature=0.4)
+    
+    def revise_document(self,
+                       original_document: str,
+                       review_feedback: str,
+                       outline: str,
+                       doc_type: str) -> LLMMessage:
+        """Revise document to PRODUCTION-READY standards based on DeepSeek's feedback (64K capacity!)"""
+        
+        prompt = f"""Revise this implementation guide to PRODUCTION-READY, ENTERPRISE-LEVEL standards based on technical review feedback.
+
+DOCUMENT TYPE: {doc_type}
+
+ORIGINAL OUTLINE:
+{outline[:5000]}
+
+ORIGINAL DOCUMENT (first part):
+{original_document[:15000]}
+
+REVIEW FEEDBACK (from technical reviewer):
+{review_feedback}
+
+🎯 YOUR MISSION:
+Create the MASSIVELY IMPROVED, PRODUCTION-READY version that addresses ALL feedback and expands to enterprise documentation standards.
+
+📋 REVISION REQUIREMENTS (ALL MANDATORY):
+
+1. **FIX ALL ISSUES IDENTIFIED IN FEEDBACK**:
+   - Correct every technical inaccuracy mentioned
+   - Add every missing section, file, or example mentioned
+   - Complete every incomplete code example
+   - Add missing configuration files in FULL
+   - Fix or add missing citations [Source: URL]
+   - Address every specific concern raised
+
+2. **EXPAND TO PRODUCTION STANDARDS**:
+   - Target: 20,000-30,000+ words (use ALL 64,000 tokens)
+   - Include 3,000-5,000+ lines of code
+   - Include 30-50+ complete configuration files
+   - Add comprehensive implementations for ALL phases
+   - Expand thin sections to full detail
+
+3. **ENHANCE CODE COMPLETENESS**:
+   - Replace ANY code snippets with COMPLETE files
+   - Remove ALL placeholders ("...", "// rest of code")
+   - Add error handling to EVERY function
+   - Add input validation EVERYWHERE
+   - Include logging in every important function
+   - Add comments explaining complex logic
+   - Every code example should be 100-500+ lines
+
+4. **ADD MISSING LIFECYCLE PHASES** (if not comprehensive):
+   - Requirements & Planning (if missing)
+   - Environment Setup (day-by-day, week 1)
+   - Database Design (complete schemas, 15-30 tables)
+   - Backend Implementation (complete APIs, 2,000-3,000 lines)
+   - Frontend Implementation (complete components, 2,000-3,000 lines)
+   - Testing (complete test suites, 3,000-5,000 lines)
+   - Security (complete implementations, 800-1,000 lines)
+   - DevOps & Deployment (complete pipelines, 1,000+ lines)
+   - Operations & Maintenance (20-30 runbooks)
+   - Documentation (OpenAPI specs, user guides)
+
+5. **ADD COMPREHENSIVE EXAMPLES**:
+   - 50-100+ complete code examples
+   - 30-50+ complete configuration files
+   - 20-30 operational runbooks
+   - 50+ troubleshooting scenarios with solutions
+   - Complete setup commands for all environments
+   - Complete deployment procedures
+   - Complete monitoring and logging setup
+
+6. **MAINTAIN WHAT'S GOOD**:
+   - Keep same overall structure and organization
+   - Preserve all existing good content and examples
+   - Keep existing citations and references
+   - Maintain technical accuracy where correct
+
+7. **QUALITY ENHANCEMENTS**:
+   - Add production-ready error handling
+   - Add security best practices throughout
+   - Add performance optimization tips
+   - Add scalability considerations
+   - Add monitoring and observability
+   - Add disaster recovery procedures
+   - Add testing strategies for each component
+
+8. **VERIFICATION SECTIONS**:
+   - Add "How to verify this works" after each major step
+   - Add "Testing this component" for each implementation
+   - Add "Common issues" (3-5 per section)
+   - Add "Performance benchmarks" where relevant
+
+🚨 CRITICAL STANDARDS:
+- This is NOT a minor revision - EXPAND MASSIVELY
+- Use ALL 64,000 tokens available
+- A junior developer should be able to build a COMPLETE PRODUCTION SYSTEM using ONLY this document
+- Include EVERYTHING needed: requirements → design → implementation → testing → deployment → operations
+- NO SUMMARIES - provide FULL IMPLEMENTATIONS
+- NO PLACEHOLDERS - provide COMPLETE CODE
+- Every configuration file must be COMPLETE and copy-pasteable
+- Think "What documentation would I want if building this for a Fortune 500 company?"
+
+Write the COMPLETE, MASSIVELY IMPROVED, PRODUCTION-READY document now:
+
+---
+
+# {doc_type}
+
+"""
+
+        # Use maximum token capacity for comprehensive documentation
+        max_tokens = Config.OLLAMA_COMPREHENSIVE_WRITE_MAX_TOKENS
+        return self.generate_response(prompt, max_tokens=max_tokens, temperature=0.4)
+    
     def validate_implementation_feasibility(self, 
                                           development_plan: str) -> Dict[str, Any]:
         """Validate the technical feasibility of a development plan"""

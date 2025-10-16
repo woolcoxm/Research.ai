@@ -1118,8 +1118,15 @@ def generate_files_from_session(session_id):
         if not context:
             return jsonify({'error': 'No context found in session'}), 404
         
-        # Get approved documents from metadata
-        approved_docs = context.get('metadata', {}).get('approved_documents', [])
+        # Get approved documents from metadata (handle both dict and object formats)
+        if hasattr(context, 'metadata'):
+            # ResearchContext object
+            approved_docs = context.metadata.get('approved_documents', [])
+            user_prompt = context.user_prompt
+        else:
+            # Dictionary format (from saved session)
+            approved_docs = context.get('metadata', {}).get('approved_documents', [])
+            user_prompt = context.get('user_prompt', 'Project')
         
         if not approved_docs:
             return jsonify({'error': 'No documents to generate'}), 400
@@ -1129,8 +1136,8 @@ def generate_files_from_session(session_id):
         
         # Create project directory
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        user_prompt = context.get('user_prompt', 'Project')[:50]
-        project_name = file_manager._sanitize_filename(user_prompt)
+        # user_prompt already extracted above
+        project_name = file_manager._sanitize_filename(user_prompt[:50])
         project_dir = os.path.join(file_manager.devplan_dir, f"{timestamp}_{project_name}")
         os.makedirs(project_dir, exist_ok=True)
         
@@ -1211,6 +1218,167 @@ def download_all_files(session_id):
         
     except Exception as e:
         logger.error(f"Failed to create ZIP for session {session_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ==================== NEW STREAMLINED API ENDPOINTS ====================
+
+@app.route('/api/start_research', methods=['POST'])
+def api_start_research():
+    """Start a new research session with the streamlined 5-stage workflow"""
+    try:
+        data = request.get_json()
+        prompt = data.get('prompt', '').strip()
+        
+        if not prompt:
+            return jsonify({'success': False, 'error': 'Prompt is required'}), 400
+        
+        # Create new session
+        session_id = str(uuid.uuid4())
+        orchestrator = ConversationOrchestrator()
+        orchestrator.set_status_callback(lambda llm, activity, details, ctx=None: update_status(session_id, llm, activity, details, ctx))
+        
+        # Start research session
+        context = orchestrator.start_research_session(prompt)
+        
+        # Store in global sessions
+        global_sessions[session_id] = {
+            'session_id': session_id,
+            'orchestrator': orchestrator,
+            'context': context,
+            'user_prompt': prompt,
+            'current_stage': context.current_stage.value,
+            'conversation_round': 0,
+            'started_at': datetime.now().isoformat(),
+            'last_updated': datetime.now().isoformat()
+        }
+        
+        logger.info(f"✨ Started new research session: {session_id}")
+        
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'stage': context.current_stage.value
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to start research: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/status/<session_id>', methods=['GET'])
+def api_get_status(session_id):
+    """Get current status of a research session"""
+    try:
+        if session_id not in global_sessions:
+            return jsonify({'success': False, 'error': 'Session not found'}), 404
+        
+        session_data = global_sessions[session_id]
+        orchestrator = session_data.get('orchestrator')
+        context = session_data.get('context')
+        
+        if not context:
+            return jsonify({'success': False, 'error': 'Invalid session'}), 500
+        
+        # Execute next round if not completed
+        if context.current_stage != ConversationStage.COMPLETED:
+            try:
+                context = orchestrator.execute_conversation_round(context)
+                session_data['context'] = context
+                session_data['current_stage'] = context.current_stage.value
+                session_data['conversation_round'] = context.conversation_round
+                session_data['last_updated'] = datetime.now().isoformat()
+            except Exception as e:
+                logger.error(f"Error executing round: {e}", exc_info=True)
+        
+        # Get progress summary
+        progress = orchestrator.get_progress_summary(context)
+        
+        # Get current activity
+        current_activity = active_status.get(session_id, {})
+        
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'stage': context.current_stage.value,
+            'stage_name': progress['stage_name'],
+            'progress_percent': progress['progress_percent'],
+            'research_queries': progress['research_queries'],
+            'sources_collected': progress['sources_collected'],
+            'documents_planned': progress['documents_planned'],
+            'documents_completed': progress['documents_completed'],
+            'documents_total': progress['documents_total'],
+            'current_document': progress['current_document'],
+            'total_words': progress['total_words'],
+            'current_activity': current_activity if current_activity else None
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to get status: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/documents/<session_id>', methods=['GET'])
+def api_get_documents(session_id):
+    """Get completed documents for a session"""
+    try:
+        if session_id not in global_sessions:
+            return jsonify({'success': False, 'error': 'Session not found'}), 404
+        
+        session_data = global_sessions[session_id]
+        context = session_data.get('context')
+        
+        if not context:
+            return jsonify({'success': False, 'error': 'Invalid session'}), 500
+        
+        completed_docs = context.metadata.get('completed_documents', [])
+        
+        return jsonify({
+            'success': True,
+            'documents': completed_docs
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to get documents: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/download/<session_id>/<filename>', methods=['GET'])
+def api_download_document(session_id, filename):
+    """Download a specific document"""
+    try:
+        if session_id not in global_sessions:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        session_data = global_sessions[session_id]
+        context = session_data.get('context')
+        
+        if not context:
+            return jsonify({'error': 'Invalid session'}), 500
+        
+        completed_docs = context.metadata.get('completed_documents', [])
+        
+        # Find the document
+        doc = next((d for d in completed_docs if d['filename'] == filename), None)
+        
+        if not doc:
+            return jsonify({'error': 'Document not found'}), 404
+        
+        # Create in-memory file
+        from io import BytesIO
+        memory_file = BytesIO()
+        memory_file.write(doc['content'].encode('utf-8'))
+        memory_file.seek(0)
+        
+        return send_file(
+            memory_file,
+            mimetype='text/markdown',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to download document: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 

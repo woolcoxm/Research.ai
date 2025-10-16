@@ -749,57 +749,8 @@ Keep response under 5,000 tokens. Be specific and actionable."""
         try:
             # Document 1: System Architecture & Implementation Guide
             logger.info("Generating Document 1: System Architecture & Implementation")
-            arch_prompt = """Create a COMPREHENSIVE, PRODUCTION-READY System Architecture & Implementation Guide.
-
-PROJECT: {user_prompt}
-
-Cover complete development lifecycle:
-- Requirements & Planning
-- Environment Setup
-- Database Design
-- Backend Implementation
-- Frontend Implementation
-- Testing Strategy
-- Security Implementation
-- DevOps & Deployment
-- Operations & Maintenance
-- Documentation
-
-RESEARCH CONTEXT:
-{research_context}
-
-TECHNICAL DISCUSSION:
-{conversation_summary}
-
-Generate detailed outline covering all phases with complete implementations, configurations, and code examples.""".format(
-                user_prompt=user_prompt,
-                research_context=research_context[:15000],
-                conversation_summary=conversation_summary[:8000]
-            )
-
-            arch_doc = self.generate_response(
-                arch_prompt,
-                research_context,
-                temperature=0.3,
-                max_tokens=doc_max_tokens
-            )
-
-            documents.append({
-                "title": "System Architecture & Implementation Guide",
-                "filename": "01_system_architecture.md",
-                "content": arch_doc.content,
-                "category": "architecture"
-            })
-            logger.info(f"Document 1 generated successfully")
-
-        except Exception as e:
-            logger.error(f"Failed to generate documents: {e}")
-            documents.append({
-                "title": "System Architecture & Implementation Guide",
-                "filename": "01_system_architecture.md",
-                "content": f"# Error\n\nFailed to generate: {str(e)}",
-                "category": "architecture"
-            })
+            # Simple placeholder prompts - details moved to Ollama
+            arch_prompt = 'Create comprehensive system architecture guide for: ' + user_prompt
 
         return documents
 

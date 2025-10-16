@@ -40,10 +40,22 @@ class Config:
     OLLAMA_DEFAULT_MAX_TOKENS = int(os.getenv('OLLAMA_DEFAULT_MAX_TOKENS', '32768'))
     OLLAMA_TIMEOUT = int(os.getenv('OLLAMA_TIMEOUT', '90000'))  # default for deep analysis
     
-    # Ollama token limits for different operations (REDUCED to prevent corruption)
-    OLLAMA_REVIEW_MAX_TOKENS = int(os.getenv('OLLAMA_REVIEW_MAX_TOKENS', '8192'))  # Reduced from 24576
-    OLLAMA_DISCUSSION_MAX_TOKENS = int(os.getenv('OLLAMA_DISCUSSION_MAX_TOKENS', '12288'))  # Reduced from 32768
-    OLLAMA_VALIDATION_MAX_TOKENS = int(os.getenv('OLLAMA_VALIDATION_MAX_TOKENS', '4096'))  # Reduced from 8192
+    # Ollama token limits for different operations
+    OLLAMA_REVIEW_MAX_TOKENS = int(os.getenv('OLLAMA_REVIEW_MAX_TOKENS', '8192'))
+    OLLAMA_DISCUSSION_MAX_TOKENS = int(os.getenv('OLLAMA_DISCUSSION_MAX_TOKENS', '12288'))
+    OLLAMA_VALIDATION_MAX_TOKENS = int(os.getenv('OLLAMA_VALIDATION_MAX_TOKENS', '4096'))
+    
+    # NEW: Optimized workflow - Ollama generates, DeepSeek reviews
+    OLLAMA_DOCUMENT_WRITE_MAX_TOKENS = int(os.getenv('OLLAMA_DOCUMENT_WRITE_MAX_TOKENS', '32000'))  # Full capacity for writing
+    OLLAMA_DOCUMENT_REVISE_MAX_TOKENS = int(os.getenv('OLLAMA_DOCUMENT_REVISE_MAX_TOKENS', '32000'))  # Full capacity for revision
+    DEEPSEEK_OUTLINE_MAX_TOKENS = int(os.getenv('DEEPSEEK_OUTLINE_MAX_TOKENS', '8000'))  # Detailed outlines for full dev cycle
+    DEEPSEEK_RESEARCH_SUMMARY_MAX_TOKENS = int(os.getenv('DEEPSEEK_RESEARCH_SUMMARY_MAX_TOKENS', '6000'))  # Comprehensive research
+    DEEPSEEK_REVIEW_MAX_TOKENS = int(os.getenv('DEEPSEEK_REVIEW_MAX_TOKENS', '8000'))  # Technical accuracy reviews
+    
+    # COMPREHENSIVE DOCUMENTATION: Full Development Lifecycle Coverage
+    # Each document should be production-ready with complete code, configs, and procedures
+    DEEPSEEK_COMPREHENSIVE_DOC_MAX_TOKENS = int(os.getenv('DEEPSEEK_COMPREHENSIVE_DOC_MAX_TOKENS', '64000'))  # For massive documents
+    OLLAMA_COMPREHENSIVE_WRITE_MAX_TOKENS = int(os.getenv('OLLAMA_COMPREHENSIVE_WRITE_MAX_TOKENS', '64000'))  # Full dev cycle docs
     
     # ============================================================================
     # Flask Application Settings

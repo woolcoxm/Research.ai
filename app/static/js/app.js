@@ -2,6 +2,7 @@
 
 class AIResearchSystem {
     constructor() {
+        console.log('🏗️ AIResearchSystem constructor called');
         this.currentSession = null;
         this.pollInterval = null;
         this.activityCount = 0;
@@ -9,6 +10,7 @@ class AIResearchSystem {
     }
 
     init() {
+        console.log('⚙️ Initializing system...');
         this.setupEventListeners();
         console.log('🚀 AI Research System initialized - 5-Stage Streamlined Workflow');
     }
@@ -18,29 +20,52 @@ class AIResearchSystem {
         const promptInput = document.getElementById('user-prompt');
         const startBtn = document.getElementById('start-research');
         
-        promptInput.addEventListener('input', (e) => {
-            startBtn.disabled = e.target.value.trim().length === 0;
-        });
+        // Enable/disable button based on input
+        const updateButtonState = () => {
+            const hasInput = promptInput.value.trim().length > 0;
+            startBtn.disabled = !hasInput;
+            console.log('Button state:', hasInput ? 'enabled' : 'disabled');
+        };
+        
+        // Set initial state
+        updateButtonState();
+        
+        // Update on input
+        promptInput.addEventListener('input', updateButtonState);
 
         // Start research
         startBtn.addEventListener('click', () => {
+            console.log('🖱️ Start button clicked!');
             this.startResearch();
         });
+        
+        console.log('✅ Event listeners setup complete');
     }
 
     async startResearch() {
+        console.log('🚀 startResearch() called');
+        
         const prompt = document.getElementById('user-prompt').value.trim();
-        if (!prompt) return;
+        console.log('📝 Prompt:', prompt);
+        
+        if (!prompt) {
+            console.warn('⚠️ No prompt provided, aborting');
+            return;
+        }
 
         // Disable start button
         document.getElementById('start-research').disabled = true;
+        console.log('🔒 Button disabled');
 
         // Show progress sections
         document.getElementById('progress-overview').classList.remove('hidden');
         document.getElementById('stages-section').classList.remove('hidden');
         document.getElementById('activity-section').classList.remove('hidden');
+        console.log('👁️ Progress sections shown');
 
         try {
+            console.log('🌐 Sending request to /api/start_research...');
+            
             // Start research session
             const response = await fetch('/api/start_research', {
                 method: 'POST',
@@ -48,7 +73,9 @@ class AIResearchSystem {
                 body: JSON.stringify({ prompt: prompt })
             });
 
+            console.log('📡 Response status:', response.status);
             const data = await response.json();
+            console.log('📦 Response data:', data);
             
             if (data.success) {
                 this.currentSession = data.session_id;

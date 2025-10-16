@@ -886,6 +886,9 @@
                             <button class="btn btn-outline-primary" id="loadSessionBtn" style="padding: 12px 24px; border-radius: 8px;" disabled>
                                 <i class="fas fa-folder-open"></i> Load
                             </button>
+                            <button class="btn btn-outline-success" id="resumeSessionBtn" style="padding: 12px 24px; border-radius: 8px; display: none;" disabled>
+                                <i class="fas fa-play"></i> Resume
+                            </button>
                             <button class="btn btn-outline-danger" id="deleteSessionBtn" style="padding: 12px 24px; border-radius: 8px;" disabled>
                                 <i class="fas fa-trash"></i> Delete
                             </button>
@@ -1593,12 +1596,14 @@
         function setupSessionControls() {
             const dropdown = document.getElementById('savedSessionsDropdown');
             const loadBtn = document.getElementById('loadSessionBtn');
+            const resumeBtn = document.getElementById('resumeSessionBtn');
             const deleteBtn = document.getElementById('deleteSessionBtn');
 
             dropdown.addEventListener('change', function() {
                 const hasSelection = this.value !== '';
                 loadBtn.disabled = !hasSelection;
                 deleteBtn.disabled = !hasSelection;
+                resumeBtn.style.display = 'none'; // Hide resume until session is loaded
             });
 
             loadBtn.addEventListener('click', async function() {
@@ -1614,16 +1619,81 @@
                     if (data.session_id) {
                         currentSessionId = data.session_id;
                         
+                        // CRITICAL: Set research as active so polling works
+                        isResearchActive = data.can_resume; // Only active if can resume
+                        
+                        // Update UI status indicator
+                        if (data.can_resume) {
+                            document.getElementById('systemStatusDot').classList.remove('idle');
+                            document.getElementById('systemStatusDot').classList.add('active');
+                            document.getElementById('systemStatusText').textContent = 'Session Restored';
+                        }
+                        
+                        // Show resume button if session can be resumed
+                        if (data.can_resume) {
+                            resumeBtn.style.display = 'inline-block';
+                            resumeBtn.disabled = false;
+                        }
+                        
                         // Switch to progress tab and start polling
                         switchTab('progress');
+                        
+                        // CRITICAL: Force an immediate status fetch to populate UI
+                        if (data.can_resume) {
+                            const statusResponse = await fetch(`/status/${currentSessionId}`);
+                            const statusData = await statusResponse.json();
+                            if (statusData.session) {
+                                updateProgressFromSession(statusData.session);
+                            }
+                        }
+                        
                         startStatusPolling();
                         startConversationPolling();
                         
-                        alert('Session restored successfully!');
+                        const statusMsg = data.can_resume 
+                            ? `Session restored at stage ${data.session_data.current_stage} (round ${data.session_data.conversation_round}). Click Resume to continue.`
+                            : 'Session restored successfully!';
+                        alert(statusMsg);
                     }
                 } catch (error) {
                     console.error('Failed to restore session:', error);
                     alert('Failed to restore session');
+                }
+            });
+
+            resumeBtn.addEventListener('click', async function() {
+                if (!currentSessionId) return;
+
+                if (!confirm('Resume this session from where it left off?')) return;
+
+                try {
+                    const response = await fetch(`/sessions/resume/${currentSessionId}`, {
+                        method: 'POST'
+                    });
+                    const data = await response.json();
+
+                    if (data.session_id) {
+                        // CRITICAL: Set research as active so polling continues
+                        isResearchActive = true;
+                        
+                        // Update UI status indicator
+                        document.getElementById('systemStatusDot').classList.remove('idle');
+                        document.getElementById('systemStatusDot').classList.add('active');
+                        document.getElementById('systemStatusText').textContent = 'Research Active';
+                        
+                        // Hide resume button and switch to progress
+                        resumeBtn.style.display = 'none';
+                        switchTab('progress');
+                        
+                        // Add activity item
+                        addActivityItem('System', `Resuming from stage ${data.current_stage}`, 
+                                      `Continuing from round ${data.conversation_round}`, 'system');
+                        
+                        alert(`Session resumed from stage ${data.current_stage}`);
+                    }
+                } catch (error) {
+                    console.error('Failed to resume session:', error);
+                    alert('Failed to resume session');
                 }
             });
 

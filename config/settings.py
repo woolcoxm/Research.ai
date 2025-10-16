@@ -40,10 +40,10 @@ class Config:
     OLLAMA_DEFAULT_MAX_TOKENS = int(os.getenv('OLLAMA_DEFAULT_MAX_TOKENS', '32768'))
     OLLAMA_TIMEOUT = int(os.getenv('OLLAMA_TIMEOUT', '90000'))  # default for deep analysis
     
-    # Ollama token limits for different operations
-    OLLAMA_REVIEW_MAX_TOKENS = int(os.getenv('OLLAMA_REVIEW_MAX_TOKENS', '24576'))
-    OLLAMA_DISCUSSION_MAX_TOKENS = int(os.getenv('OLLAMA_DISCUSSION_MAX_TOKENS', '32768'))
-    OLLAMA_VALIDATION_MAX_TOKENS = int(os.getenv('OLLAMA_VALIDATION_MAX_TOKENS', '8192'))
+    # Ollama token limits for different operations (REDUCED to prevent corruption)
+    OLLAMA_REVIEW_MAX_TOKENS = int(os.getenv('OLLAMA_REVIEW_MAX_TOKENS', '8192'))  # Reduced from 24576
+    OLLAMA_DISCUSSION_MAX_TOKENS = int(os.getenv('OLLAMA_DISCUSSION_MAX_TOKENS', '12288'))  # Reduced from 32768
+    OLLAMA_VALIDATION_MAX_TOKENS = int(os.getenv('OLLAMA_VALIDATION_MAX_TOKENS', '4096'))  # Reduced from 8192
     
     # ============================================================================
     # Flask Application Settings

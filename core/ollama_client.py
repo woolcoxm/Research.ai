@@ -125,18 +125,38 @@ You have {max_tokens} tokens available - use them for architecture documentation
             # Extract the response content
             content = response_data.get("response", "")
             
+            # CRITICAL: Validate response length and truncate if necessary
+            max_chars = max_tokens * 4  # Rough estimate: 1 token ≈ 4 characters
+            if len(content) > max_chars:
+                logger.warning(f"[OLLAMA] Response too long ({len(content)} chars), truncating to {max_chars} chars")
+                # Find last complete sentence before limit
+                truncated = content[:max_chars]
+                last_period = truncated.rfind('.')
+                last_newline = truncated.rfind('\n')
+                cut_point = max(last_period, last_newline)
+                if cut_point > max_chars * 0.8:  # Only use if we're not losing too much
+                    content = content[:cut_point + 1]
+                else:
+                    content = truncated + "\n\n[Response truncated due to length]"
+            
+            # Additional validation: ensure no incomplete sentences
+            if not content.endswith(('.', '!', '?', '\n', '`', '"', "'")):
+                logger.warning(f"[OLLAMA] Response appears incomplete (ends with: '{content[-20:]}')")
+                # Try to find last complete sentence
+                for end_char in ['.', '!', '?', '\n']:
+                    last_pos = content.rfind(end_char)
+                    if last_pos > len(content) * 0.9:  # Within last 10%
+                        content = content[:last_pos + 1]
+                        break
+            
             # Create LLM message
             message = LLMMessage(
                 llm_type=LLMType.OLLAMA,
                 content=content,
                 confidence_score=0.8  # Default confidence
             )
-            try:
-                logger.info(f"Ollama response generated: {len(content)} characters, max_tokens: {max_tokens}")
-            except Exception:
-                pass
             
-            logger.info(f"Ollama response generated: {len(content)} characters")
+            logger.info(f"[OLLAMA] Response generated: {len(content)} characters, max_tokens: {max_tokens}")
             return message
             
         except Exception as e:

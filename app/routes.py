@@ -67,7 +67,7 @@ try:
             'error': sdata.get('error'),
             'saved_files': None,
             'last_updated': sdata.get('saved_at', datetime.now().isoformat()),
-            'user_prompt': context.original_query[:100] + '...' if context and hasattr(context, 'original_query') and len(context.original_query) > 100 else (context.original_query if context and hasattr(context, 'original_query') else ''),
+            'user_prompt': context.user_prompt[:100] + '...' if context and hasattr(context, 'user_prompt') and len(context.user_prompt) > 100 else (context.user_prompt if context and hasattr(context, 'user_prompt') else ''),
             'current_round': sdata.get('current_round', 0),
             'status': sdata.get('status', 'in_progress')
         }
@@ -775,6 +775,21 @@ def restore_session(session_id):
         context = session_data.get('context')
         messages = session_data.get('messages', [])
         
+        logger.info(f"[RESTORE] Loaded session {session_id}: context={context is not None}, messages={len(messages)}")
+        
+        # CRITICAL: Restore messages to the context object
+        # Messages are loaded separately but need to be in context.messages for display
+        if context:
+            context.messages = messages
+            logger.info(f"[RESTORE] Restored {len(messages)} messages to context.messages for session {session_id}")
+        else:
+            logger.error(f"[RESTORE] No context found for session {session_id}!")
+            
+        if not messages:
+            logger.warning(f"[RESTORE] No messages found for session {session_id}!")
+        else:
+            logger.info(f"[RESTORE] Have {len(messages)} messages, first message: type={type(messages[0]).__name__}, llm_type={messages[0].llm_type.value if hasattr(messages[0], 'llm_type') else 'NO ATTR'}")
+        
         # Create JSON-safe version for global_sessions (without raw objects)
         safe_messages = [
             {
@@ -795,45 +810,229 @@ def restore_session(session_id):
             for msg in messages
         ]
         
+        logger.info(f"[RESTORE] Created all_messages_safe with {len(all_messages_safe)} messages")
+        
         # Update global sessions with JSON-safe data
+        search_count = len(context.initial_searches) + len(context.targeted_searches) if context else 0
+        
         global_sessions[session_id] = {
             'session_id': session_id,
             'current_stage': context.current_stage.value if context else 'initial_breakdown',
-            'conversation_round': session_data.get('current_round', 0),
+            'conversation_round': context.conversation_round if context else session_data.get('current_round', 0),
             'context_maturity': context.context_maturity if context else 0.0,
             'quality_gates_passed': context.quality_gates_passed if context else [],
             'message_count': len(messages),
-            'search_count': session_data.get('search_count', 0),
+            'search_count': search_count,
             'latest_messages': safe_messages,
             'all_messages': all_messages_safe,
-            'completed': session_data.get('completed', False),
-            'failed': session_data.get('failed', False),
+            'completed': session_data.get('status') == 'completed',
+            'failed': session_data.get('status') == 'failed',
             'error': session_data.get('error'),
             'saved_files': None,
             'last_updated': datetime.now().isoformat(),
-            'user_prompt': context.original_query[:100] + '...' if context and len(context.original_query) > 100 else (context.original_query if context else ''),
-            'current_round': session_data.get('current_round', 0),
-            'status': session_data.get('status', 'in_progress')
+            'user_prompt': context.user_prompt if context else 'Unknown',
+            'current_round': context.conversation_round if context else session_data.get('current_round', 0),
+            'status': session_data.get('status', 'restored')
         }
+        
+        logger.info(f"[RESTORE] Set global_sessions[{session_id}] with {global_sessions[session_id]['message_count']} messages, all_messages length: {len(global_sessions[session_id]['all_messages'])}")
+        
+        # CRITICAL: Set status so UI can display the session info immediately
+        status_msg = 'Restored session' if session_data.get('status') == 'completed' else 'Session ready to resume'
+        update_status(session_id, "System", status_msg, 
+                     f"Stage: {context.current_stage.value if context else 'unknown'}, Round: {context.conversation_round if context else 0}",
+                     research_context=context)
         
         # Set as current session
         session['current_session'] = session_id
         
-        logger.info(f"Restored session {session_id}")
+        # Store the restored context and messages for potential resumption
+        session['research_context'] = {
+            'session_id': context.session_id if context else session_id,
+            'current_stage': context.current_stage.value if context else 'initial_breakdown',
+            'conversation_round': context.conversation_round if context else 0,
+            'context_maturity': context.context_maturity if context else 0.0
+        }
+        
+        logger.info(f"Restored session {session_id} at stage {context.current_stage.value if context else 'unknown'}, round {context.conversation_round if context else 0}")
         return jsonify({
             'session_id': session_id,
             'message': 'Session restored successfully',
+            'can_resume': session_data.get('status') == 'in_progress' and context and context.current_stage != ConversationStage.COMPLETED,
             'session_data': {
                 'session_id': session_id,
-                'user_prompt': context.original_query if context else 'Unknown',
+                'user_prompt': context.user_prompt if context else 'Unknown',
                 'message_count': len(messages),
                 'saved_at': session_data.get('saved_at'),
-                'status': session_data.get('status', 'in_progress')
+                'status': session_data.get('status', 'in_progress'),
+                'current_stage': context.current_stage.value if context else 'unknown',
+                'conversation_round': context.conversation_round if context else 0
             }
         })
         
     except Exception as e:
         logger.error(f"Failed to restore session {session_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/sessions/resume/<session_id>', methods=['POST'])
+def resume_session(session_id):
+    """Resume a restored session from where it left off"""
+    if orchestrator is None:
+        return jsonify({'error': 'System not properly initialized'}), 500
+    
+    try:
+        # Load the full session data
+        session_data = load_session(session_id)
+        
+        if not session_data:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        context = session_data.get('context')
+        messages = session_data.get('messages', [])
+        
+        if not context:
+            return jsonify({'error': 'Invalid session data - no context found'}), 400
+        
+        # Check if session is already completed
+        if context.current_stage == ConversationStage.COMPLETED:
+            return jsonify({'error': 'Session is already completed'}), 400
+        
+        # CRITICAL: Restore messages to the context object
+        # The messages are loaded separately but need to be in context.messages
+        context.messages = messages
+        logger.info(f"Restored {len(messages)} messages to context")
+        
+        # Update global session with current data - CRITICAL: Include all_messages for UI
+        all_messages_safe = [
+            {
+                'llm_type': msg.llm_type.value if hasattr(msg, 'llm_type') else 'system',
+                'content': msg.content,
+                'timestamp': msg.timestamp.isoformat() if hasattr(msg, 'timestamp') else datetime.now().isoformat(),
+                'id': msg.id if hasattr(msg, 'id') else str(uuid.uuid4())
+            }
+            for msg in messages
+        ]
+        
+        safe_messages = [
+            {
+                'llm_type': msg.llm_type.value if hasattr(msg, 'llm_type') else 'system',
+                'content': msg.content[:200] + '...' if len(msg.content) > 200 else msg.content,
+                'timestamp': msg.timestamp.isoformat() if hasattr(msg, 'timestamp') else datetime.now().isoformat()
+            }
+            for msg in messages[-6:]  # Last 6 messages
+        ]
+        
+        global_sessions[session_id] = {
+            'session_id': session_id,
+            'current_stage': context.current_stage.value,
+            'conversation_round': context.conversation_round,
+            'context_maturity': context.context_maturity,
+            'quality_gates_passed': context.quality_gates_passed,
+            'message_count': len(messages),
+            'search_count': len(context.initial_searches) + len(context.targeted_searches),
+            'latest_messages': safe_messages,
+            'all_messages': all_messages_safe,
+            'completed': False,
+            'failed': False,
+            'error': None,
+            'saved_files': {},
+            'last_updated': datetime.now().isoformat(),
+            'user_prompt': context.user_prompt,
+            'current_round': context.conversation_round,
+            'status': 'resuming'
+        }
+        
+        # CRITICAL: Set active status so UI shows activity
+        update_status(session_id, "System", f"Resuming from stage {context.current_stage.value}", 
+                     f"Round {context.conversation_round}", research_context=context)
+        
+        logger.info(f"Resuming session {session_id} from stage {context.current_stage.value}, round {context.conversation_round}")
+        
+        # Run the workflow continuation in a background thread
+        import threading
+        def continue_workflow(research_context, session_id):
+            try:
+                # Set up status callback
+                def status_callback(llm_name, activity, details="", ctx=None):
+                    update_status(session_id, llm_name, activity, details, research_context=ctx)
+                
+                orchestrator.set_status_callback(status_callback)
+                
+                update_status(session_id, "System", f"Resuming from stage {research_context.current_stage.value}", research_context=research_context)
+                logger.info(f"Continuing automated workflow from stage {research_context.current_stage.value}")
+                
+                # Continue from current stage
+                max_rounds = 50
+                while research_context.conversation_round < max_rounds and research_context.current_stage != ConversationStage.COMPLETED:
+                    update_status(session_id, "System", f"Executing round {research_context.conversation_round + 1}", research_context=research_context)
+                    logger.info(f"Executing round {research_context.conversation_round + 1}, Stage: {research_context.current_stage.value}")
+                    research_context = orchestrator.execute_conversation_round(research_context)
+                    
+                    # Update the global session store
+                    _update_global_session(session_id, research_context)
+                    
+                    if research_context.current_stage == ConversationStage.COMPLETED:
+                        logger.info("Workflow completed")
+                        break
+                
+                # Finalize documents if completed
+                if research_context.current_stage == ConversationStage.COMPLETED:
+                    update_status(session_id, "System", "Finalizing documents", research_context=research_context)
+                    
+                    approved_docs = research_context.metadata.get('approved_documents', [])
+                    if approved_docs:
+                        # Save documents (same logic as original workflow)
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        project_name = file_manager._sanitize_filename(research_context.user_prompt[:50])
+                        project_dir = os.path.join(file_manager.devplan_dir, f"{timestamp}_{project_name}")
+                        os.makedirs(project_dir, exist_ok=True)
+                        
+                        saved_files = {}
+                        for idx, doc in enumerate(approved_docs):
+                            title = doc.get('title', f'Document_{idx+1}')
+                            content = doc.get('content', '')
+                            filename = f"{idx+1:02d}_{file_manager._sanitize_filename(title)}.md"
+                            filepath = os.path.join(project_dir, filename)
+                            
+                            with open(filepath, 'w', encoding='utf-8') as f:
+                                f.write(content)
+                            
+                            saved_files[title] = filepath
+                            logger.info(f"Saved document: {filepath}")
+                        
+                        if session_id in global_sessions:
+                            global_sessions[session_id]['saved_files'] = saved_files
+                    
+                    update_status(session_id, "System", "Research workflow completed!", research_context=research_context)
+                    if session_id in global_sessions:
+                        global_sessions[session_id]['completed'] = True
+                        global_sessions[session_id]['status'] = 'completed'
+                
+            except Exception as e:
+                logger.error(f"Error in continued workflow: {e}")
+                import traceback
+                traceback.print_exc()
+                if session_id in global_sessions:
+                    global_sessions[session_id]['failed'] = True
+                    global_sessions[session_id]['error'] = str(e)
+                    global_sessions[session_id]['status'] = 'failed'
+        
+        thread = threading.Thread(target=continue_workflow, args=(context, session_id))
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'session_id': session_id,
+            'message': f'Session resumed from stage {context.current_stage.value}',
+            'current_stage': context.current_stage.value,
+            'conversation_round': context.conversation_round
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to resume session {session_id}: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 

@@ -645,7 +645,7 @@ TECHNICAL DISCUSSION: {conversation_summary}
 - **Log Analysis**: Log parsing commands and patterns to search for
 - **Include complete troubleshooting playbook**
 
-IMPORTANT: This should be a PRODUCTION-READY operations guide with every security configuration, test file, deployment script, and monitoring setup needed to run the system in production. Include complete, runnable code for everything.
+IMPORTANT: This should be a PRODUCTION-READY operations guide with every security configuration, test file, deployment script, and monitoring setup needed to run the system in production. Include complete, runnable code for everything."""
 
             ops_doc = self.generate_response(ops_prompt, research_context, temperature=0.3, max_tokens=doc_max_tokens)
             documents.append({
@@ -668,7 +668,10 @@ IMPORTANT: This should be a PRODUCTION-READY operations guide with every securit
         if len(conversation_summary) > 20000:  # Only create if there's substantial technical discussion
             try:
                 logger.info("Generating Document 4: API Documentation & Integration Implementation")
-                api_prompt = f"""Create a COMPLETE API DOCUMENTATION & INTEGRATION IMPLEMENTATION GUIDE for: {user_prompt}
+                api_prompt = """Create a COMPLETE API DOCUMENTATION & INTEGRATION IMPLEMENTATION GUIDE for: {prompt}
+
+RESEARCH CONTEXT: {context}
+TECHNICAL DISCUSSION: {discussion}
 
 RESEARCH CONTEXT: {research_context}
 TECHNICAL DISCUSSION: {conversation_summary}
@@ -822,7 +825,7 @@ func NewClient(baseURL string) *Client {{
 ### Twilio SMS/WhatsApp Integration
 - **Twilio Setup**: Complete client initialization
 - **SMS Sending**: SMS notification implementations
-- **Two-Factor Authentication**: 2FA implementation with Twilio Verify
+- **Two-Factor Authentication**: Implementation with Twilio Verify
 - **WhatsApp Business**: WhatsApp message templates and sending
 - **Include 150-250 lines of Twilio integration code**
 
@@ -955,7 +958,10 @@ app.post('/webhooks/stripe', async (req, res) => {{
 - **API Health Check**: /health endpoint implementation
 - **Include error handling utilities (200-300 lines)**
 
-IMPORTANT: This should be a COMPLETE, PRODUCTION-READY API documentation that includes every single endpoint specification, complete SDK implementations in 3+ languages, full integration code for all third-party services, and everything a developer needs to integrate with the API.
+IMPORTANT: This should be a COMPLETE, PRODUCTION-READY API documentation that includes every single endpoint specification, complete SDK implementations in 3+ languages, full integration code for all third-party services, and everything a developer needs to integrate with the API."""
+                
+                # Format the template with actual values
+                api_prompt = api_prompt.format(prompt=user_prompt, context=research_context, discussion=conversation_summary)
 
                 api_doc = self.generate_response(api_prompt, research_context, temperature=0.3, max_tokens=doc_max_tokens)
                 documents.append({

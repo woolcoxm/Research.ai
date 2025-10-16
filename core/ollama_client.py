@@ -69,85 +69,90 @@ class OllamaClient:
         if max_tokens is None:
             max_tokens = Config.OLLAMA_DEFAULT_MAX_TOKENS
         
-        # Build the system prompt for comprehensive responses
-        system_prompt = f"""You are Ollama, an expert software architect and technical documentation specialist having a discussion with DeepSeek about software project planning and architecture.
+        # Build the system prompt for CONCISE, focused responses
+        system_prompt = f"""You are Ollama, an expert software architect and technical reviewer.
 
-CRITICAL INSTRUCTIONS:
-- PRIORITIZE comprehensive documentation, architectural decisions, and planning over code implementation
-- Focus on WHY and WHAT rather than detailed HOW (save code for later implementation)
-- Provide DETAILED architectural analysis and documentation (1500-2000 words minimum)
-- NEVER stop mid-sentence or mid-thought
-- Include code ONLY when necessary to illustrate critical architectural concepts (keep it minimal - pseudocode or small examples)
-- Each response should focus on design patterns, system architecture, and implementation strategy
-- Continue discussing until you've provided substantial architectural and planning value
-- NEVER repeat the same content - each paragraph must add new insights
+CRITICAL RESPONSE GUIDELINES (FOLLOW STRICTLY):
+- Be CONCISE and FOCUSED - quality over quantity
+- Limit responses to 800-1200 words maximum
+- Use bullet points and structured formats for clarity
+- Provide specific, actionable feedback only
+- Keep code examples minimal (< 20 lines) - use pseudocode when possible
+- ALWAYS complete your thoughts - never stop mid-sentence
+- Your response has a STRICT limit of {max_tokens} tokens - use them wisely
 
-Your response should be structured with:
-1. Architectural analysis and design decisions
-2. System design and component interaction documentation
-3. Technology choices and trade-offs (explain WHY, not implement HOW)
-4. Minimal pseudocode or conceptual examples ONLY when absolutely needed for clarity
-5. Implementation considerations and next planning steps
+Response Structure (stick to this format):
+1. **Key Assessment** (2-3 sentences): What's good/bad about the proposal
+2. **Specific Issues** (bullet list, 3-5 items): Concrete problems or concerns
+3. **Recommendations** (bullet list, 3-5 items): Specific changes needed
+4. **Decision**: State "APPROVED" or "NEEDS REVISION: [specific reason]"
 
-REMEMBER: This is the PLANNING phase - focus on documenting WHAT to build and WHY, not writing production code.
-You have {max_tokens} tokens available - use them for architecture documentation and planning."""
+REMEMBER: This is a REVIEW phase. Be critical, concise, and decisive. Don't repeat information."""
         if context:
             system_prompt += f"\n\nResearch context: {context[:200]}..."
         citation_instruction = "\n\nCite sources when needed: [Source: URL]"
         system_prompt += citation_instruction
         
+        # ENFORCE hard limit (80% of requested to leave safety buffer)
+        enforced_limit = int(max_tokens * 0.8)
+        max_chars = enforced_limit * 4  # Rough estimate: 1 token ≈ 4 characters
+        
         request_data = {
             "model": self.model,
             "prompt": prompt,
             "system": system_prompt,
-            "stream": False,
+            "stream": True,  # CRITICAL: Enable streaming for real-time control
             "options": {
                 "temperature": temperature,
-                "num_predict": max_tokens,  # Use configurable token limit
+                "num_predict": enforced_limit,  # Enforced limit, not just suggestion
                 "num_ctx": 32768,  # Large context window
                 "top_k": 40,
                 "top_p": 0.9,
-                "repeat_penalty": 1.1,
-                "stop": []  # No stop sequences - let it complete fully
+                "repeat_penalty": 1.2,  # Increased to discourage repetition
+                "stop": ["</response>", "---END---", "\n\nIn conclusion"]  # Add stop sequences
             }
         }
         
         try:
-            # Log request size
-            try:
-                import json as _json
-                logger.info(f"Ollama request size: {len(_json.dumps(request_data))} bytes, max_tokens: {max_tokens}")
-            except Exception:
-                pass
+            # Log request
+            logger.info(f"[OLLAMA] Generating response with max_tokens={max_tokens}, enforced_limit={enforced_limit}, max_chars={max_chars}")
 
-            response_data = self._make_request("generate", request_data)
+            # Stream the response and enforce limits in real-time
+            url = f"{self.base_url}/api/generate"
+            response = requests.post(url, json=request_data, timeout=self.timeout, stream=True)
+            response.raise_for_status()
             
-            # Extract the response content
-            content = response_data.get("response", "")
+            content = ""
+            token_count = 0
             
-            # CRITICAL: Validate response length and truncate if necessary
-            max_chars = max_tokens * 4  # Rough estimate: 1 token ≈ 4 characters
-            if len(content) > max_chars:
-                logger.warning(f"[OLLAMA] Response too long ({len(content)} chars), truncating to {max_chars} chars")
-                # Find last complete sentence before limit
-                truncated = content[:max_chars]
-                last_period = truncated.rfind('.')
-                last_newline = truncated.rfind('\n')
-                cut_point = max(last_period, last_newline)
-                if cut_point > max_chars * 0.8:  # Only use if we're not losing too much
-                    content = content[:cut_point + 1]
-                else:
-                    content = truncated + "\n\n[Response truncated due to length]"
+            # Stream and collect response with hard limits
+            for line in response.iter_lines():
+                if line:
+                    try:
+                        chunk = json.loads(line)
+                        if chunk.get("response"):
+                            content += chunk.get("response")
+                            token_count += 1
+                        
+                        # HARD STOP if limits exceeded
+                        if len(content) >= max_chars or token_count >= enforced_limit:
+                            logger.warning(f"[OLLAMA] Stopping at {token_count} tokens / {len(content)} chars (limit reached)")
+                            break
+                        
+                        if chunk.get("done"):
+                            logger.info(f"[OLLAMA] Response completed naturally at {token_count} tokens")
+                            break
+                    except json.JSONDecodeError:
+                        continue  # Skip malformed lines
             
-            # Additional validation: ensure no incomplete sentences
-            if not content.endswith(('.', '!', '?', '\n', '`', '"', "'")):
-                logger.warning(f"[OLLAMA] Response appears incomplete (ends with: '{content[-20:]}')")
-                # Try to find last complete sentence
-                for end_char in ['.', '!', '?', '\n']:
-                    last_pos = content.rfind(end_char)
-                    if last_pos > len(content) * 0.9:  # Within last 10%
-                        content = content[:last_pos + 1]
-                        break
+            # Validate response is not empty
+            if not content.strip():
+                raise ValueError("Empty response from Ollama")
+            
+            # Validate completeness and fix if needed
+            if not self._is_response_complete(content):
+                logger.warning(f"[OLLAMA] Response incomplete, attempting to finish last sentence")
+                content = self._complete_last_sentence(content)
             
             # Create LLM message
             message = LLMMessage(
@@ -381,3 +386,51 @@ Ensure each section provides unique, actionable technical insights. Build upon D
         
         response = self.generate_response(prompt, temperature=0.5, max_tokens=Config.OLLAMA_VALIDATION_MAX_TOKENS)
         return response.content
+    def _is_response_complete(self, content: str) -> bool:
+        """
+        Check if response ends properly and appears complete
+        
+        Returns:
+            True if response looks complete, False otherwise
+        """
+        if not content or len(content) < 10:
+            return False
+        
+        # Check last 100 chars for proper ending
+        ending = content[-100:].strip()
+        
+        # Should end with sentence punctuation or code block
+        valid_endings = ('.', '!', '?', '\n', '`', '"', "'", ')', ']', '}')
+        has_valid_ending = ending.endswith(valid_endings)
+        
+        if not has_valid_ending:
+            logger.debug(f"Response ending invalid: '{ending[-30:]}'")
+            return False
+        
+        # Check for common incomplete patterns
+        incomplete_patterns = ['in order to', 'for example', 'such as', 'as follows:', 'will be', 'should be', 'this is', 'which means', 'because of']
+        ending_lower = ending.lower()
+        for pattern in incomplete_patterns:
+            if ending_lower.endswith(pattern):
+                logger.debug(f"Response ends with incomplete pattern: '{pattern}'")
+                return False
+        
+        # Check for words longer than 25 characters (likely corrupted)
+        words = ending.split()
+        if words and len(words[-1]) > 25:
+            logger.debug(f"Response ends with suspiciously long word: '{words[-1]}'")
+            return False
+        return True
+
+    def _complete_last_sentence(self, content: str) -> str:
+        """
+        Try to complete an incomplete sentence by finding last complete sentence
+        """
+        for punct in ['. ', '.\n', '! ', '!\n', '? ', '?\n', '\n\n']:
+            last_pos = content.rfind(punct)
+            if last_pos > len(content) * 0.85:
+                truncated = content[:last_pos + 1].rstrip()
+                logger.info(f"Truncated incomplete response at position {last_pos}")
+                return truncated
+        logger.warning("Could not find good truncation point, adding ellipsis")
+        return content.rstrip() + "..."

@@ -48,6 +48,71 @@ class ConversationOrchestrator:
             else:
                 self.status_callback(llm_name, activity, details)
     
+    def _extract_json_safely(self, content: str, expected_type: str = "array") -> Optional[Any]:
+        """
+        Safely extract JSON from LLM response with multiple fallback strategies
+        
+        Args:
+            content: The LLM response content
+            expected_type: "array" for lists or "object" for dicts
+        
+        Returns:
+            Parsed JSON or None if all strategies fail
+        """
+        import re
+        
+        # Strategy 1: Look for JSON code blocks (```json ... ```)
+        code_block_match = re.search(r'```json\s*(\{.*?\}|\[.*?\])\s*```', content, re.DOTALL)
+        if code_block_match:
+            try:
+                parsed = json.loads(code_block_match.group(1))
+                logger.info(f"JSON extracted from code block successfully")
+                return parsed
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSON code block invalid: {e}")
+        
+        # Strategy 2: Find JSON by bracket matching with proper nesting
+        if expected_type == "array":
+            bracket_start, bracket_end = '[', ']'
+        else:
+            bracket_start, bracket_end = '{', '}'
+        
+        start_idx = content.find(bracket_start)
+        if start_idx == -1:
+            logger.warning(f"No JSON start bracket '{bracket_start}' found")
+            return None
+        
+        # Count brackets to find matching end (handles nesting)
+        depth = 0
+        for i in range(start_idx, len(content)):
+            char = content[i]
+            if char == bracket_start:
+                depth += 1
+            elif char == bracket_end:
+                depth -= 1
+                if depth == 0:
+                    # Found matching closing bracket
+                    json_str = content[start_idx:i+1]
+                    try:
+                        parsed = json.loads(json_str)
+                        logger.info(f"JSON extracted via bracket matching successfully")
+                        return parsed
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Bracket-matched JSON invalid: {e}")
+                        # Try to clean common issues
+                        json_str_cleaned = re.sub(r',\s*([}\]])', r'\1', json_str)  # Remove trailing commas
+                        json_str_cleaned = json_str_cleaned.replace("'", '"')  # Single to double quotes
+                        try:
+                            parsed = json.loads(json_str_cleaned)
+                            logger.info(f"JSON extracted after cleaning successfully")
+                            return parsed
+                        except json.JSONDecodeError:
+                            logger.error(f"Even cleaned JSON failed. First 200 chars: {json_str[:200]}")
+                            return None
+        
+        logger.warning("No matching closing bracket found for JSON")
+        return None
+    
     def start_research_session(self, user_prompt: str) -> ResearchContext:
         """Start a new research session with iterative workflow"""
         logger.info(f"Starting iterative research session for: {user_prompt}")
@@ -152,7 +217,7 @@ For each point, provide 2-3 sentences of analysis. Be thorough and identify 8-12
     def _stage2_discuss_breakdown(self, context: ResearchContext) -> ResearchContext:
         """LLMs discuss breakdown and identify research topics"""
         round_num = context.metadata.get('breakdown_discussion_round', 0)
-        max_rounds = 4
+        max_rounds = 2  # REDUCED from 4 to 2 for efficiency
         
         logger.info(f"Stage 2: Round {round_num}/{max_rounds}")
         
@@ -254,19 +319,18 @@ Return ONLY a JSON array like: ["query 1", "query 2", ...]"""
             self._update_status("DeepSeek", "Stage 2/11: Research Plan", message.content)
             logger.info(f"DeepSeek finalization complete: {len(message.content)} chars")
             
-            # Extract queries from response
+            # Extract queries from response using robust JSON extraction
             try:
-                # Try to find JSON array in response
-                content = message.content
-                start = content.find('[')
-                end = content.rfind(']') + 1
-                if start != -1 and end > start:
-                    queries = json.loads(content[start:end])
+                queries = self._extract_json_safely(message.content, expected_type="array")
+                
+                if queries and isinstance(queries, list) and len(queries) > 0:
                     context.metadata['research_queries'] = queries
-                    logger.info(f"Extracted {len(queries)} research queries from JSON")
+                    logger.info(f"Extracted {len(queries)} research queries via robust JSON extraction")
                 else:
                     # Fallback: split by newlines
-                    queries = [line.strip() for line in content.split('\n') if line.strip() and not line.strip().startswith('#')]
+                    logger.warning("JSON extraction returned invalid data, using fallback line-by-line extraction")
+                    queries = [line.strip() for line in message.content.split('\n') 
+                              if line.strip() and not line.strip().startswith('#') and len(line.strip()) > 10]
                     context.metadata['research_queries'] = queries[:18]
                     logger.warning(f"Fallback extraction: {len(queries)} queries")
                 
@@ -314,9 +378,9 @@ Return ONLY a JSON array like: ["query 1", "query 2", ...]"""
         self._update_status("System", f"Stage 3/11: Executing {len(queries)} research queries", "Gathering comprehensive information (parallel)")
         logger.info(f"Stage 3: Research - Executing {len(queries)} queries in parallel")
         
-        # Execute searches in parallel (max 5 concurrent searches)
+        # Execute searches in parallel (max 10 concurrent searches - increased for efficiency)
         all_results = []
-        max_workers = min(5, len(queries))
+        max_workers = min(10, len(queries))  # INCREASED from 5 to 10
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all search tasks
@@ -410,9 +474,9 @@ Be concise but thorough. Focus on actionable insights."""
             "Processing multiple chunks simultaneously for faster analysis..."
         )
         
-        # Process chunks in parallel (max 3 concurrent API calls)
+        # Process chunks in parallel (max 5 concurrent API calls - increased for efficiency)
         chunk_analyses = []
-        max_workers = min(3, total_chunks)
+        max_workers = min(5, total_chunks)  # INCREASED from 3 to 5
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all analysis tasks
@@ -511,7 +575,7 @@ Remove duplicates and synthesize common themes."""
     def _stage5_discuss_findings(self, context: ResearchContext) -> ResearchContext:
         """LLMs discuss research findings"""
         round_num = context.metadata.get('findings_discussion_round', 0)
-        max_rounds = 5
+        max_rounds = 2  # REDUCED from 5 to 2 for efficiency
         
         if round_num >= max_rounds:
             logger.info(f"Findings discussion complete after {round_num} rounds")
@@ -580,7 +644,7 @@ Provide detailed clarification using the comprehensive research data available."
     def _stage6_deep_dive(self, context: ResearchContext) -> ResearchContext:
         """LLMs do deep dive with dynamic search triggers"""
         round_num = context.metadata.get('deep_dive_round', 0)
-        max_rounds = 7
+        max_rounds = 3  # REDUCED from 7 to 3 for efficiency
         
         if round_num >= max_rounds:
             logger.info(f"Deep dive complete after {round_num} rounds")
@@ -729,7 +793,7 @@ Be comprehensive - use all available context."""
     def _stage8_discuss_compilation(self, context: ResearchContext) -> ResearchContext:
         """LLMs discuss compilation, can trigger more searches"""
         round_num = context.metadata.get('compilation_discussion_round', 0)
-        max_rounds = 4
+        max_rounds = 2  # REDUCED from 4 to 2 for efficiency
         
         if round_num >= max_rounds:
             logger.info(f"Compilation discussion complete after {round_num} rounds")
@@ -845,7 +909,7 @@ Is this comprehensive and complete? Approve or identify remaining gaps."""
         approved = context.metadata.get('approved_documents', [])
         current_index = context.metadata.get('current_doc_index', 0)
         round_num = context.metadata.get('doc_refinement_round', 0)
-        max_rounds_per_doc = 6
+        max_rounds_per_doc = 3  # REDUCED from 6 to 3 for efficiency
         
         # Check if all documents approved
         if current_index >= len(pending):
